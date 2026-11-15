@@ -31,8 +31,13 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "PUT_YOUR_BOT_TOKEN")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "123456789").split(",") if x.strip()]
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "your_support_username")
 REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "")
+# Channel where new Gmail submissions (with Approve/Reject buttons) are posted.
+# Use the numeric id like -1001234567890 (or @username). Bot must be an admin of the channel.
+_ch = os.getenv("ADMIN_CHANNEL", "").strip()
+ADMIN_CHANNEL = int(_ch) if _ch.lstrip("-").isdigit() else _ch
 CUR = "BDT"
 WITHDRAW_METHODS = ["bKash", "Nagad", "Binance"]
+WITHDRAW_COOLDOWN_HOURS = 24  # one withdraw request per user per this many hours
 DEFAULTS = {"rate": 5.0, "min_withdraw": 50.0, "ref_bonus": 1.0}
 
 logging.basicConfig(level=logging.INFO)
@@ -215,12 +220,18 @@ def deduct_sync(uid, amt):
 
 
 def create_wd_sync(uid, method, addr, amt):
+    """Returns (status, withdraw_id). status: ok / cooldown / nobalance."""
+    now = int(time.time())
+    user = get_user(uid) or {}
+    if now - user.get("last_withdraw", 0) < WITHDRAW_COOLDOWN_HOURS * 3600:
+        return "cooldown", None
     if not deduct_sync(uid, amt):
-        return None
+        return "nobalance", None
+    R(f"users/{uid}/last_withdraw").set(now)
     key = R(f"withdrawals/{uid}").push({"method": method, "address": addr, "amount": amt,
-                                         "status": "pending", "created": int(time.time())}).key
+                                         "status": "pending", "created": now}).key
     add_num("stats/pending_wd", 1)
-    return key
+    return "ok", key
 
 
 def decide_wd_sync(uid, wid, paid):
@@ -230,6 +241,7 @@ def decide_wd_sync(uid, wid, paid):
     w = R(f"withdrawals/{uid}/{wid}").get()
     if not paid:
         add_num(f"users/{uid}/balance", w["amount"])
+        R(f"users/{uid}/last_withdraw").set(0)  # rejected: allow a new request right away
     return w
 
 
@@ -278,6 +290,17 @@ async def notify_admins(ctx, text, markup=None):
             await ctx.bot.send_message(a, text, parse_mode=ParseMode.HTML, reply_markup=markup)
         except Exception as e:
             logging.warning("admin notify failed %s: %s", a, e)
+
+
+async def notify_channel(ctx, text, markup=None):
+    """Post Gmail submissions to the admin channel; fall back to admin DMs if not set or it fails."""
+    if ADMIN_CHANNEL:
+        try:
+            await ctx.bot.send_message(ADMIN_CHANNEL, text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            return
+        except Exception as e:
+            logging.warning("channel post failed, sending to admins instead: %s", e)
+    await notify_admins(ctx, text, markup)
 
 
 async def guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -371,6 +394,11 @@ async def show_referral(update, ctx):
 async def start_withdraw(update, ctx):
     user = await A(get_user, update.effective_user.id)
     bal = user.get("balance", 0)
+    left = user.get("last_withdraw", 0) + WITHDRAW_COOLDOWN_HOURS * 3600 - int(time.time())
+    if left > 0:
+        await update.message.reply_text(
+            f"⏳ You already made a withdraw request. Try again in {left // 3600}h {(left % 3600) // 60}m.")
+        return
     if bal < cfg("min_withdraw"):
         await update.message.reply_text(
             f"❌ Minimum withdraw is {money(cfg('min_withdraw'))}.\nYour balance: {money(bal)}")
@@ -405,9 +433,14 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Amount must be between {money(cfg('min_withdraw'))} and {money(bal)}.")
             return
         method, addr = ctx.user_data["method"], ctx.user_data["addr"]
-        wid = await A(create_wd_sync, uid, method, addr, amt)
+        status, wid = await A(create_wd_sync, uid, method, addr, amt)
         ctx.user_data.clear()
-        if wid is None:
+        if status == "cooldown":
+            await update.message.reply_text(
+                f"⏳ You can make only one withdraw request every {WITHDRAW_COOLDOWN_HOURS} hours.",
+                reply_markup=main_menu())
+            return
+        if status == "nobalance":
             await update.message.reply_text("❌ Insufficient balance.", reply_markup=main_menu())
             return
         await update.message.reply_text("✅ Withdraw request submitted. Please wait for approval.",
@@ -495,7 +528,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                   parse_mode=ParseMode.HTML)
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc['id']}"),
                                     InlineKeyboardButton("❌ Reject", callback_data=f"no:{uid}:{acc['id']}")]])
-        await notify_admins(ctx, f"🆕 <b>New Gmail submission</b>\nUser: {esc(q.from_user.full_name)} (<code>{uid}</code>)\n"
+        await notify_channel(ctx, f"🆕 <b>New Gmail submission</b>\nUser: {esc(q.from_user.full_name)} (<code>{uid}</code>)\n"
                                  f"Email: <code>{acc['email']}@gmail.com</code>\nPassword: <code>{acc['password']}</code>\n"
                                  f"Reward: {money(acc['rate'])}", kb)
 
