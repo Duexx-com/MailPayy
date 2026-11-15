@@ -8,7 +8,7 @@ Public proof channel posts ONLY on withdrawal paid.
 Render Free Tier + UptimeRobot friendly:
   • Webhook mode auto-enabled when RENDER_EXTERNAL_URL is set
   • Polling mode for local development
-  • No 409 Conflict — safe for Render's health checks
+  • Simple webhook path (/tg-hook) — no colon, Render-safe
 
 Install : pip install -r requirements.txt
 Env     : BOT_TOKEN, ADMIN_IDS, SUPPORT_USERNAME,
@@ -56,6 +56,7 @@ FIREBASE_CRED_STR = os.getenv("FIREBASE_CREDENTIALS", "").strip()
 
 RENDER_URL        = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 PORT              = int(os.getenv("PORT", "8080"))
+WEBHOOK_PATH      = "tg-hook"    # ✅ simple path — no colon, Render-safe
 
 CUR              = "BDT"
 WITHDRAW_METHODS = ["bKash", "Nagad", "Binance"]
@@ -1088,11 +1089,10 @@ async def proof_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
-#  🌐  HEALTH CHECK (for UptimeRobot — keeps Render awake)
+#  🌐  HEALTH CHECK
 # ═══════════════════════════════════════════════════════════
 
 async def _health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # Only triggered if someone sends /health to the bot
     await update.message.reply_text("OK")
 
 
@@ -1127,9 +1127,8 @@ def main():
     app = _build_app()
 
     if RENDER_URL:
-        # ── PRODUCTION: webhook mode (Render free tier friendly) ──
-        webhook_path = BOT_TOKEN
-        webhook_url  = f"{RENDER_URL.rstrip('/')}/{webhook_path}"
+        # ── PRODUCTION: webhook mode (simple path, Render-safe) ──
+        webhook_url = f"{RENDER_URL.rstrip('/')}/{WEBHOOK_PATH}"
         log.info("🌐 Starting %s in WEBHOOK mode", BOT_NAME)
         log.info("   Listen  : 0.0.0.0:%s", PORT)
         log.info("   Webhook : %s", webhook_url)
@@ -1137,10 +1136,10 @@ def main():
         app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
-            url_path=webhook_path,
+            url_path=WEBHOOK_PATH,
             webhook_url=webhook_url,
             allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,   # avoids stale updates after restart
+            drop_pending_updates=True,
         )
     else:
         # ── LOCAL DEV: polling mode ──
