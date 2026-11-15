@@ -1,11 +1,17 @@
-# Gmail Sell Bot (Firebase Realtime Database version)
-# Users create Gmail accounts with details given by the bot and sell them to you.
-#
-# Install:  pip install "python-telegram-bot>=21" firebase-admin
-# Env vars: BOT_TOKEN, ADMIN_IDS (comma separated), SUPPORT_USERNAME,
-#           FIREBASE_DB_URL  (e.g. https://your-project-default-rtdb.firebaseio.com)
-#           FIREBASE_CREDENTIALS  (full service-account JSON text)  OR a file serviceAccountKey.json
-# Optional: REQUIRED_CHANNEL (e.g. @mychannel)
+"""
+💎 MAILPAYY BOT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Users create Gmail accounts from bot-provided details and
+sell them for cash. Firebase Realtime Database backend.
+Public proof channel posts ONLY on withdrawal paid.
+
+Install : pip install "python-telegram-bot>=21" firebase-admin
+Env     : BOT_TOKEN, ADMIN_IDS, SUPPORT_USERNAME,
+          FIREBASE_DB_URL, FIREBASE_CREDENTIALS (JSON text
+          OR serviceAccountKey.json on disk)
+Optional: REQUIRED_CHANNEL, PROOF_CHANNEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
 
 import asyncio
 import html
@@ -15,39 +21,194 @@ import os
 import random
 import secrets
 import string
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import firebase_admin
 from firebase_admin import credentials, db as rtdb
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
-from telegram.constants import ParseMode
-from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
-                          ContextTypes, MessageHandler, filters)
+from telegram import (
+    InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update,
+)
+from telegram.constants import ChatAction, ParseMode
+from telegram.error import RetryAfter, TelegramError
+from telegram.ext import (
+    Application, CallbackQueryHandler, CommandHandler, ContextTypes,
+    MessageHandler, filters,
+)
 
-# ---------------- CONFIG ----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "PUT_YOUR_BOT_TOKEN")
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "123456789").split(",") if x.strip()]
-SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "your_support_username")
-REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "")
-# Channel where new Gmail submissions (with Approve/Reject buttons) are posted.
-# Use the numeric id like -1001234567890 (or @username). Bot must be an admin of the channel.
-_ch = os.getenv("ADMIN_CHANNEL", "").strip()
-ADMIN_CHANNEL = int(_ch) if _ch.lstrip("-").isdigit() else _ch
-CUR = "BDT"
+# ═══════════════════════════════════════════════════════════
+#  ⚙️  CONFIG
+# ═══════════════════════════════════════════════════════════
+
+BOT_NAME          = "MailPayy"
+
+BOT_TOKEN         = os.getenv("BOT_TOKEN", "").strip()
+ADMIN_IDS         = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()]
+SUPPORT_USERNAME  = os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@")
+REQUIRED_CHANNEL  = os.getenv("REQUIRED_CHANNEL", "").strip()
+PROOF_CHANNEL     = os.getenv("PROOF_CHANNEL", "").strip()
+FIREBASE_DB_URL   = os.getenv("FIREBASE_DB_URL", "").strip()
+FIREBASE_CRED_STR = os.getenv("FIREBASE_CREDENTIALS", "").strip()
+
+CUR              = "BDT"
 WITHDRAW_METHODS = ["bKash", "Nagad", "Binance"]
-WITHDRAW_COOLDOWN_HOURS = 24  # one withdraw request per user per this many hours
-DEFAULTS = {"rate": 5.0, "min_withdraw": 50.0, "ref_bonus": 1.0}
+DEFAULTS         = {"rate": 5.0, "min_withdraw": 50.0, "ref_bonus": 1.0}
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s │ %(levelname)-7s │ %(name)s │ %(message)s",
+)
+log = logging.getLogger("mailpayy")
 
-# ---------------- FIREBASE ----------------
-_cred_json = os.getenv("FIREBASE_CREDENTIALS")
-_cred = credentials.Certificate(json.loads(_cred_json) if _cred_json else "serviceAccountKey.json")
-firebase_admin.initialize_app(_cred, {"databaseURL": os.getenv("FIREBASE_DB_URL", "")})
+
+def _validate_env():
+    missing = []
+    if not BOT_TOKEN or BOT_TOKEN == "PUT_YOUR_BOT_TOKEN":
+        missing.append("BOT_TOKEN")
+    if not ADMIN_IDS:
+        missing.append("ADMIN_IDS")
+    if not FIREBASE_DB_URL:
+        missing.append("FIREBASE_DB_URL")
+    if missing:
+        raise SystemExit(f"❌ Missing required env vars: {', '.join(missing)}")
+    if not SUPPORT_USERNAME:
+        log.warning("⚠️ SUPPORT_USERNAME not set — placeholder shown to users.")
+    if PROOF_CHANNEL:
+        log.info("📢 Proof channel configured: %s", PROOF_CHANNEL)
+
+
+_validate_env()
+
+# ═══════════════════════════════════════════════════════════
+#  ✨  ANIMATED EMOJI SUPPORT
+# ═══════════════════════════════════════════════════════════
+#
+# How to add your own animated emoji:
+#   1. Forward any animated emoji to @JsonDumpBot in Telegram
+#   2. Copy the "custom_emoji_id" value from the JSON output
+#   3. Paste it as the value for the matching character below
+#
+# If a value is empty (""), the plain static emoji is used.
+# If an ID is wrong, Telegram will reject the whole message —
+# so ALWAYS verify with @JsonDumpBot before deploying.
+#
+# The IDs below are TRIAL values. Replace them with your own
+# verified IDs for guaranteed animation.
+
+ANIMATED: dict[str, str] = {
+    "✨": "",     # sparkles
+    "🔥": "",     # fire
+    "💎": "",     # gem stone
+    "👑": "",     # crown
+    "⚡": "",     # lightning
+    "🎯": "",     # target
+    "🎉": "",     # party popper
+    "🚀": "",     # rocket
+    "🛡": "",     # shield
+    "📊": "",     # chart
+    "📜": "",     # scroll
+    "🎁": "",     # gift
+    "💰": "",     # money bag
+    "💳": "",     # card
+    "🔔": "",     # bell
+    "👋": "",     # wave
+    "✅": "",     # check
+    "❌": "",     # cross
+    "⏳": "",     # hourglass
+    "⚠": "",      # warning
+    "🔒": "",     # lock
+    "📧": "",     # email
+    "👤": "",     # user
+    "🔑": "",     # key
+    "🏆": "",     # trophy
+    "💫": "",     # sparkle
+}
+
+
+def _emoji(char: str) -> str:
+    """Return animated <tg-emoji> tag if ID exists, else plain char."""
+    eid = ANIMATED.get(char, "")
+    if eid:
+        return f'<tg-emoji emoji-id="{eid}">{char}</tg-emoji>'
+    return char
+
+
+# ═══════════════════════════════════════════════════════════
+#  🎨  STYLE / EMOJI CONSTANTS
+# ═══════════════════════════════════════════════════════════
+
+DIV    = "━━━━━━━━━━━━━━━━━━━━"
+SUBDIV = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+ARROW  = "➤"
+DOT    = "•"
+
+STAR   = _emoji("✨")
+FIRE   = _emoji("🔥")
+GEM    = _emoji("💎")
+CROWN  = _emoji("👑")
+BOLT   = _emoji("⚡")
+TARGET = _emoji("🎯")
+PARTY  = _emoji("🎉")
+ROCKET = _emoji("🚀")
+SHIELD = _emoji("🛡")
+CHART  = _emoji("📊")
+SCROLL = _emoji("📜")
+GIFT   = _emoji("🎁")
+BAG    = _emoji("💰")
+CARD   = _emoji("💳")
+BELL   = _emoji("🔔")
+WAVE   = _emoji("👋")
+CHECK  = _emoji("✅")
+CROSS  = _emoji("❌")
+CLOCK  = _emoji("⏳")
+WARN   = _emoji("⚠")
+LOCK   = _emoji("🔒")
+MAIL   = _emoji("📧")
+USER   = _emoji("👤")
+KEY    = _emoji("🔑")
+TROPHY = _emoji("🏆")
+SPARK  = _emoji("💫")
+
+
+def money(x) -> str:
+    return f"<b>{float(x):,.2f}</b> {CUR}"
+
+
+def esc(s) -> str:
+    return html.escape(str(s or ""))
+
+
+def mono(s) -> str:
+    return f"<code>{esc(s)}</code>"
+
+
+def mask_name(name: str) -> str:
+    if not name:
+        return "Anonymous"
+    parts = name.strip().split()
+    if len(parts) == 1:
+        return parts[0][:3] + "***"
+    return parts[0] + " " + "".join(p[0] + "." for p in parts[1:] if p)
+
+
+def mask_addr(addr: str) -> str:
+    if not addr:
+        return "***"
+    a = str(addr).strip()
+    if len(a) <= 4:
+        return "***"
+    return "***" + a[-4:]
+
+
+# ═══════════════════════════════════════════════════════════
+#  🔌  FIREBASE
+# ═══════════════════════════════════════════════════════════
+
+_cred = credentials.Certificate(
+    json.loads(FIREBASE_CRED_STR) if FIREBASE_CRED_STR else "serviceAccountKey.json"
+)
+firebase_admin.initialize_app(_cred, {"databaseURL": FIREBASE_DB_URL})
 R = rtdb.reference
-A = asyncio.to_thread  # run blocking Firebase calls without freezing the bot
+A = asyncio.to_thread
 
 
 def load_settings():
@@ -66,20 +227,11 @@ def cfg(key):
     return SETTINGS[key]
 
 
-def money(x):
-    return f"{float(x):.2f} {CUR}"
-
-
-def esc(s):
-    return html.escape(str(s or ""))
-
-
 def add_num(path, amt):
     R(path).transaction(lambda cur: (cur or 0) + amt)
 
 
 def claim(path, old, new):
-    """Atomically change a status from old -> new. Returns True only for the first caller."""
     got = {"v": False}
 
     def fn(cur):
@@ -93,17 +245,37 @@ def claim(path, old, new):
     return got["v"]
 
 
-# ---------------- IDENTITY GENERATOR ----------------
-FIRST = ["Rafiq", "Tanvir", "Nusrat", "Sabbir", "Mim", "Arif", "Jannat", "Hasan", "Rumana", "Imran",
-         "Sadia", "Fahim", "Tasnim", "Rakib", "Mitu", "Shuvo", "Farhana", "Nayeem", "Lamia", "Sohan"]
-LAST = ["Ahmed", "Hossain", "Rahman", "Khan", "Islam", "Akter", "Chowdhury", "Uddin", "Sarker", "Mia",
-        "Begum", "Mahmud", "Karim", "Sultana", "Biswas", "Talukdar", "Haque", "Sheikh", "Mondal", "Roy"]
+_issue_locks: dict[int, asyncio.Lock] = {}
+
+
+def _lock_for(uid: int) -> asyncio.Lock:
+    lock = _issue_locks.get(uid)
+    if lock is None:
+        lock = asyncio.Lock()
+        _issue_locks[uid] = lock
+    return lock
+
+
+# ═══════════════════════════════════════════════════════════
+#  🧬  IDENTITY GENERATOR
+# ═══════════════════════════════════════════════════════════
+
+FIRST = ["Rafiq", "Tanvir", "Nusrat", "Sabbir", "Mim", "Arif", "Jannat", "Hasan",
+         "Rumana", "Imran", "Sadia", "Fahim", "Tasnim", "Rakib", "Mitu", "Shuvo",
+         "Farhana", "Nayeem", "Lamia", "Sohan"]
+LAST  = ["Ahmed", "Hossain", "Rahman", "Khan", "Islam", "Akter", "Chowdhury",
+         "Uddin", "Sarker", "Mia", "Begum", "Mahmud", "Karim", "Sultana",
+         "Biswas", "Talukdar", "Haque", "Sheikh", "Mondal", "Roy"]
 
 
 def gen_password():
     chars = string.ascii_letters + string.digits
-    pw = [secrets.choice(string.ascii_uppercase), secrets.choice(string.ascii_lowercase),
-          secrets.choice(string.digits), secrets.choice("@#$%&*")]
+    pw = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice("@#$%*"),
+    ]
     pw += [secrets.choice(chars) for _ in range(8)]
     random.shuffle(pw)
     return "".join(pw)
@@ -114,11 +286,14 @@ def gen_identity():
         first, last = random.choice(FIRST), random.choice(LAST)
         email = f"{first}{last}{random.randint(1000, 99999)}".lower()
         if R(f"emails/{email}").get() is None:
-            R(f"emails/{email}").set(True)  # reserve so it is never issued twice
+            R(f"emails/{email}").set(True)
             return first, last, email, gen_password()
 
 
-# ---------------- DATABASE FUNCTIONS (blocking, called through A) ----------------
+# ═══════════════════════════════════════════════════════════
+#  🗄  DATABASE HELPERS
+# ═══════════════════════════════════════════════════════════
+
 def get_user(uid):
     return R(f"users/{uid}").get()
 
@@ -127,9 +302,11 @@ def ensure_user_sync(u, ref=None):
     user = get_user(u.id)
     if user is None:
         ref_by = ref if ref and ref != u.id and get_user(ref) else 0
-        R(f"users/{u.id}").set({"name": u.full_name, "username": u.username or "", "balance": 0,
-                                "pending": 0, "total_earned": 0, "banned": False, "ref_by": ref_by,
-                                "ref_count": 0, "joined": int(time.time())})
+        R(f"users/{u.id}").set({
+            "name": u.full_name, "username": u.username or "",
+            "balance": 0, "total_earned": 0, "banned": False,
+            "ref_by": ref_by, "ref_count": 0, "joined": int(time.time()),
+        })
         if ref_by:
             add_num(f"users/{ref_by}/ref_count", 1)
         user = get_user(u.id)
@@ -148,8 +325,10 @@ def issue_sync(uid, regenerate):
         v["id"] = k
         return v
     first, last, email, pw = gen_identity()
-    rec = {"first": first, "last": last, "email": email, "password": pw,
-           "status": "issued", "rate": cfg("rate"), "created": int(time.time())}
+    rec = {
+        "first": first, "last": last, "email": email, "password": pw,
+        "status": "issued", "rate": cfg("rate"), "created": int(time.time()),
+    }
     rec["id"] = R(f"accounts/{uid}").push(rec).key
     return rec
 
@@ -165,27 +344,34 @@ def submit_sync(uid, aid):
     add_num("stats/pending_acc", 1)
     acc = R(f"accounts/{uid}/{aid}").get()
     acc["id"] = aid
-    add_num(f"users/{uid}/pending", acc["rate"])  # reward waits in Pending until admin decides
     return acc
 
 
 def decide_acc_sync(uid, aid, approve):
-    if not claim(f"accounts/{uid}/{aid}/status", "pending", "approved" if approve else "rejected"):
+    if not claim(f"accounts/{uid}/{aid}/status",
+                 "pending", "approved" if approve else "rejected"):
         return None
     add_num("stats/pending_acc", -1)
     acc = R(f"accounts/{uid}/{aid}").get()
-    # take the reward out of Pending (never below zero, e.g. for old submissions)
-    R(f"users/{uid}/pending").transaction(lambda cur: max((cur or 0) - acc["rate"], 0))
-    if approve:
+    if approve and acc:
         add_num("stats/approved_acc", 1)
         add_num(f"users/{uid}/balance", acc["rate"])
         add_num(f"users/{uid}/total_earned", acc["rate"])
-        accs = R(f"accounts/{uid}").get() or {}
-        approved = sum(1 for v in accs.values() if v.get("status") == "approved")
+
         ref = (get_user(uid) or {}).get("ref_by")
-        if approved == 1 and ref:
-            add_num(f"users/{ref}/balance", cfg("ref_bonus"))
-            add_num(f"users/{ref}/total_earned", cfg("ref_bonus"))
+        if ref:
+            got = {"v": False}
+
+            def fn(cur):
+                if cur:
+                    return cur
+                got["v"] = True
+                return True
+
+            R(f"users/{uid}/ref_bonus_paid").transaction(fn)
+            if got["v"]:
+                add_num(f"users/{ref}/balance", cfg("ref_bonus"))
+                add_num(f"users/{ref}/total_earned", cfg("ref_bonus"))
     return acc
 
 
@@ -197,7 +383,8 @@ def count_status(uid):
 
 
 def history_sync(uid):
-    accs = [v for v in (R(f"accounts/{uid}").get() or {}).values() if v.get("status") != "issued"]
+    accs = [v for v in (R(f"accounts/{uid}").get() or {}).values()
+            if v.get("status") != "issued"]
     wds = list((R(f"withdrawals/{uid}").get() or {}).items())
     accs.sort(key=lambda x: x.get("created", 0), reverse=True)
     wds.sort(key=lambda x: x[1].get("created", 0), reverse=True)
@@ -220,28 +407,29 @@ def deduct_sync(uid, amt):
 
 
 def create_wd_sync(uid, method, addr, amt):
-    """Returns (status, withdraw_id). status: ok / cooldown / nobalance."""
-    now = int(time.time())
-    user = get_user(uid) or {}
-    if now - user.get("last_withdraw", 0) < WITHDRAW_COOLDOWN_HOURS * 3600:
-        return "cooldown", None
     if not deduct_sync(uid, amt):
-        return "nobalance", None
-    R(f"users/{uid}/last_withdraw").set(now)
-    key = R(f"withdrawals/{uid}").push({"method": method, "address": addr, "amount": amt,
-                                         "status": "pending", "created": now}).key
+        return None
+    try:
+        key = R(f"withdrawals/{uid}").push({
+            "method": method, "address": addr, "amount": amt,
+            "status": "pending", "created": int(time.time()),
+        }).key
+    except Exception:
+        log.exception("withdrawal push failed — refunding user")
+        add_num(f"users/{uid}/balance", amt)
+        return None
     add_num("stats/pending_wd", 1)
-    return "ok", key
+    return key
 
 
 def decide_wd_sync(uid, wid, paid):
-    if not claim(f"withdrawals/{uid}/{wid}/status", "pending", "paid" if paid else "rejected"):
+    if not claim(f"withdrawals/{uid}/{wid}/status",
+                 "pending", "paid" if paid else "rejected"):
         return None
     add_num("stats/pending_wd", -1)
     w = R(f"withdrawals/{uid}/{wid}").get()
-    if not paid:
+    if not paid and w:
         add_num(f"users/{uid}/balance", w["amount"])
-        R(f"users/{uid}/last_withdraw").set(0)  # rejected: allow a new request right away
     return w
 
 
@@ -273,15 +461,67 @@ def all_user_ids_sync():
     return [k for k, v in (R("users").get() or {}).items() if not v.get("banned")]
 
 
-# ---------------- HELPERS ----------------
+# ═══════════════════════════════════════════════════════════
+#  📢  PROOF CHANNEL
+# ═══════════════════════════════════════════════════════════
+
+async def post_payout_proof(ctx, user_name: str, method: str, addr: str, amount: float):
+    if not PROOF_CHANNEL:
+        return
+    text = (
+        f"{ROCKET} <b>WITHDRAWAL PAID</b> {ROCKET}\n"
+        f"{DIV}\n"
+        f"{USER} <b>User:</b> {esc(mask_name(user_name))}\n"
+        f"{CARD} <b>Method:</b> {esc(method)}\n"
+        f"{MAIL} <b>Account:</b> {mono(mask_addr(addr))}\n"
+        f"{BAG} <b>Amount:</b> {money(amount)}\n"
+        f"{CLOCK} <b>Time:</b> {time.strftime('%d %b %Y • %H:%M')}\n"
+        f"{DIV}\n"
+        f"{FIRE} <i>Instant payout — verified & paid.</i>"
+    )
+    try:
+        await ctx.bot.send_message(
+            PROOF_CHANNEL, text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+        log.info("proof posted for %s (%s)", mask_name(user_name), method)
+    except TelegramError as e:
+        log.warning("proof channel post failed: %s", e)
+
+
+# ═══════════════════════════════════════════════════════════
+#  🧰  HELPERS
+# ═══════════════════════════════════════════════════════════
+
+MENU_SELL     = f"{GEM} Sell Gmail"
+MENU_ACCOUNT  = f"{CROWN} My Account"
+MENU_WITHDRAW = f"{CARD} Withdraw"
+MENU_HISTORY  = f"{CHART} History"
+MENU_REFERRAL = f"{GIFT} Referral"
+MENU_SUPPORT  = f"{BELL} Support"
+
+
 def main_menu():
     return ReplyKeyboardMarkup(
-        [["💰 Sell Gmail", "👤 My Account"], ["💸 Withdraw", "📜 History"], ["🎁 Referral", "☎️ Support"]],
-        resize_keyboard=True)
+        [
+            [MENU_SELL,     MENU_ACCOUNT],
+            [MENU_WITHDRAW, MENU_HISTORY],
+            [MENU_REFERRAL, MENU_SUPPORT],
+        ],
+        resize_keyboard=True,
+    )
 
 
-def is_admin(uid):
+def is_admin(uid: int) -> bool:
     return uid in ADMIN_IDS
+
+
+async def _typing(ctx, chat_id):
+    try:
+        await ctx.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    except Exception:
+        pass
 
 
 async def notify_admins(ctx, text, markup=None):
@@ -289,207 +529,340 @@ async def notify_admins(ctx, text, markup=None):
         try:
             await ctx.bot.send_message(a, text, parse_mode=ParseMode.HTML, reply_markup=markup)
         except Exception as e:
-            logging.warning("admin notify failed %s: %s", a, e)
+            log.warning("admin notify failed for %s: %s", a, e)
 
 
-async def notify_channel(ctx, text, markup=None):
-    """Post Gmail submissions to the admin channel; fall back to admin DMs if not set or it fails."""
-    if ADMIN_CHANNEL:
-        try:
-            await ctx.bot.send_message(ADMIN_CHANNEL, text, parse_mode=ParseMode.HTML, reply_markup=markup)
-            return
-        except Exception as e:
-            logging.warning("channel post failed, sending to admins instead: %s", e)
-    await notify_admins(ctx, text, markup)
+_channel_cache: dict[int, tuple[float, bool]] = {}
+_CHANNEL_TTL = 60
+
+
+async def _channel_ok(ctx, uid: int) -> bool:
+    if not REQUIRED_CHANNEL:
+        return True
+    now = time.time()
+    cached = _channel_cache.get(uid)
+    if cached and now - cached[0] < _CHANNEL_TTL:
+        return cached[1]
+    try:
+        m = await ctx.bot.get_chat_member(REQUIRED_CHANNEL, uid)
+        ok = m.status not in ("left", "kicked")
+    except Exception as e:
+        log.warning("channel check failed: %s", e)
+        ok = True
+    _channel_cache[uid] = (now, ok)
+    return ok
 
 
 async def guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
     u = update.effective_user
     user = await A(ensure_user_sync, u, None)
     if user.get("banned"):
-        await update.effective_message.reply_text("🚫 You are banned from using this bot.")
+        await update.effective_message.reply_text(
+            f"{LOCK} <b>You are banned from using {BOT_NAME}.</b>",
+            parse_mode=ParseMode.HTML,
+        )
         return False
-    if REQUIRED_CHANNEL:
-        try:
-            m = await ctx.bot.get_chat_member(REQUIRED_CHANNEL, u.id)
-            if m.status in ("left", "kicked"):
-                kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}")],
-                    [InlineKeyboardButton("✅ I Joined", callback_data="chk")]])
-                await update.effective_message.reply_text("📢 Please join our channel to use the bot.", reply_markup=kb)
-                return False
-        except Exception as e:
-            logging.warning("channel check failed: %s", e)
+    if not await _channel_ok(ctx, u.id):
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Channel",
+                                  url=f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}")],
+            [InlineKeyboardButton("✅ I Joined", callback_data="chk")],
+        ])
+        await update.effective_message.reply_text(
+            f"{BELL} <b>Please join our channel to continue.</b>",
+            parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
+        return False
     return True
 
 
-# ---------------- USER COMMANDS ----------------
+# ═══════════════════════════════════════════════════════════
+#  👤  USER COMMANDS
+# ═══════════════════════════════════════════════════════════
+
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ref = int(ctx.args[0]) if ctx.args and ctx.args[0].isdigit() else None
     await A(ensure_user_sync, update.effective_user, ref)
     if not await guard(update, ctx):
         return
     ctx.user_data.clear()
-    await update.message.reply_text(
-        f"👋 <b>Welcome, {esc(update.effective_user.first_name)}!</b>\n\n"
-        f"💎 Sell Gmail accounts and earn <b>{money(cfg('rate'))}</b> per approved account.\n\n"
-        "1️⃣ Tap <b>Sell Gmail</b>\n2️⃣ Create the account with the details we give\n"
-        "3️⃣ Submit it and get paid after approval ✅",
-        parse_mode=ParseMode.HTML, reply_markup=main_menu())
+    name = esc(update.effective_user.first_name)
+    text = (
+        f"{STAR} <b>WELCOME TO {BOT_NAME.upper()}</b> {STAR}\n"
+        f"{DIV}\n"
+        f"{WAVE} Hey <b>{name}</b>!\n"
+        f"{GEM} Earn <b>{money(cfg('rate'))}</b> per approved Gmail\n"
+        f"{DIV}\n"
+        f"{ARROW} <b>Step 1</b> — Tap {MENU_SELL}\n"
+        f"{ARROW} <b>Step 2</b> — Create the account with our details\n"
+        f"{ARROW} <b>Step 3</b> — Submit & get paid automatically\n"
+        f"{DIV}\n"
+        f"{FIRE} <i>Your first sale awaits — start now!</i>"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu())
 
 
 async def issue_account(update: Update, ctx: ContextTypes.DEFAULT_TYPE, regenerate=False):
     uid = update.effective_user.id
-    row = await A(issue_sync, uid, regenerate)
-    text = (
-        "📧 <b>Create this Gmail account</b>\n\n"
-        f"👤 First name: <code>{row['first']}</code>\n"
-        f"👤 Last name: <code>{row['last']}</code>\n"
-        f"📨 Email: <code>{row['email']}@gmail.com</code>\n"
-        f"🔑 Password: <code>{row['password']}</code>\n\n"
-        f"💵 Reward: <b>{money(row['rate'])}</b>\n\n"
-        "⚠️ Use <b>exactly</b> these details. Do not add recovery info or change the password.\n"
-        "Tap any value to copy. When finished press <b>Done</b>.")
+    await _typing(ctx, update.effective_chat.id)
+    async with _lock_for(uid):
+        row = await A(issue_sync, uid, regenerate)
+
+    body = (
+        f"{USER} <b>First Name</b>\n   {mono(row['first'])}\n"
+        f"{USER} <b>Last Name</b>\n   {mono(row['last'])}\n"
+        f"{MAIL} <b>Email</b>\n   {mono(row['email'] + '@gmail.com')}\n"
+        f"{KEY} <b>Password</b>\n   {mono(row['password'])}\n"
+        f"{DIV}\n"
+        f"{BAG} <b>Reward:</b> {money(row['rate'])}"
+    )
+    footer = (
+        f"{WARN} Use these <b>exact</b> details.\n"
+        f"{ARROW} Don't change the password\n"
+        f"{ARROW} Don't add recovery info\n"
+        f"{DIV}\n"
+        f"{ARROW} Finished? Tap <b>Done</b> below 👇"
+    )
+    text = f"{STAR} <b>NEW GMAIL DETAILS</b> {STAR}\n{DIV}\n{body}\n{DIV}\n{footer}"
+
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Done - Submit", callback_data=f"done:{row['id']}")],
-        [InlineKeyboardButton("🔄 New Details", callback_data="new"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"cancel:{row['id']}")]])
-    await ctx.bot.send_message(update.effective_chat.id, text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        [InlineKeyboardButton("✅ DONE — Submit for Review", callback_data=f"done:{row['id']}")],
+        [
+            InlineKeyboardButton("🔄 New Details", callback_data="new"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel:{row['id']}"),
+        ],
+    ])
+    await ctx.bot.send_message(update.effective_chat.id, text,
+                               parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 async def show_account(update, ctx):
     uid = update.effective_user.id
     user = await A(get_user, uid)
     c = await A(count_status, uid)
-    await update.message.reply_text(
-        "👤 <b>My Account</b>\n\n"
-        f"🆔 ID: <code>{uid}</code>\n"
-        f"💰 Balance: <b>{money(user.get('balance', 0))}</b>\n"
-        f"📈 Total earned: {money(user.get('total_earned', 0))}\n"
-        f"⏳ Pending: {money(user.get('pending', 0))}\n"
-        f"\n✅ Approved Gmail: {c.get('approved', 0)}\n🕒 Waiting for review: {c.get('pending', 0)}\n❌ Rejected Gmail: {c.get('rejected', 0)}",
-        parse_mode=ParseMode.HTML)
+    body = (
+        f"{USER} <b>ID:</b> {mono(uid)}\n"
+        f"{BAG} <b>Balance:</b> {money(user.get('balance', 0))}\n"
+        f"{CHART} <b>Total Earned:</b> {money(user.get('total_earned', 0))}\n"
+        f"{SUBDIV}\n"
+        f"{CHECK} <b>Approved:</b> {c.get('approved', 0)}\n"
+        f"{CLOCK} <b>Pending:</b>  {c.get('pending', 0)}\n"
+        f"{CROSS} <b>Rejected:</b> {c.get('rejected', 0)}"
+    )
+    text = f"{CROWN} <b>MY ACCOUNT</b> {CROWN}\n{DIV}\n{body}"
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def show_history(update, ctx):
-    icon = {"approved": "✅", "pending": "⏳", "rejected": "❌", "paid": "✅"}
+    icons = {"approved": CHECK, "pending": CLOCK, "rejected": CROSS, "paid": CHECK}
     accs, wds = await A(history_sync, update.effective_user.id)
-    t = "📜 <b>Recent Gmail submissions</b>\n"
-    t += "\n".join(f"{icon.get(a['status'], '⏳')} {a['email']}@gmail.com - {a['status']}" for a in accs) or "None yet"
-    t += "\n\n💸 <b>Recent withdrawals</b>\n"
-    t += "\n".join(f"{icon.get(w['status'], '⏳')} {money(w['amount'])} via {w['method']} - {w['status']}"
-                   for _, w in wds) or "None yet"
-    await update.message.reply_text(t, parse_mode=ParseMode.HTML)
+
+    acc_lines = "\n".join(
+        f"{icons.get(a['status'], CLOCK)} {mono(a['email'] + '@gmail.com')} — {a['status']}"
+        for a in accs
+    ) or f"{DOT} <i>No submissions yet</i>"
+
+    wd_lines = "\n".join(
+        f"{icons.get(w['status'], CLOCK)} {money(w['amount'])} via {esc(w['method'])} — {w['status']}"
+        for _, w in wds
+    ) or f"{DOT} <i>No withdrawals yet</i>"
+
+    text = (
+        f"{SCROLL} <b>RECENT ACTIVITY</b> {SCROLL}\n"
+        f"{DIV}\n"
+        f"{MAIL} <b>Gmail Submissions</b>\n"
+        f"{SUBDIV}\n{acc_lines}\n\n"
+        f"{CARD} <b>Withdrawals</b>\n"
+        f"{SUBDIV}\n{wd_lines}"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def show_referral(update, ctx):
     uid = update.effective_user.id
     user = await A(get_user, uid)
-    await update.message.reply_text(
-        f"🎁 <b>Referral</b>\n\nInvite friends and earn <b>{money(cfg('ref_bonus'))}</b> when their first Gmail is approved.\n\n"
-        f"🔗 Your link:\nhttps://t.me/{ctx.bot.username}?start={uid}\n\n👥 Invited: {user.get('ref_count', 0)}",
-        parse_mode=ParseMode.HTML)
+    link = f"https://t.me/{ctx.bot.username}?start={uid}"
+    text = (
+        f"{GIFT} <b>REFERRAL PROGRAM</b> {GIFT}\n"
+        f"{DIV}\n"
+        f"{TARGET} Invite friends — earn <b>{money(cfg('ref_bonus'))}</b>\n"
+        f"    when their <b>first</b> Gmail is approved.\n"
+        f"{SUBDIV}\n"
+        f"{ARROW} <b>Your Link:</b>\n"
+        f"<code>{esc(link)}</code>\n"
+        f"{SUBDIV}\n"
+        f"{USER} <b>Invited:</b> {user.get('ref_count', 0)} friends\n"
+        f"{DIV}\n"
+        f"{FIRE} <i>Share your link & grow together!</i>"
+    )
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📤 Share Link",
+                             url=f"https://t.me/share/url?url={link}&text=Join%20and%20earn%20with%20Gmail!")
+    ]])
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 async def start_withdraw(update, ctx):
     user = await A(get_user, update.effective_user.id)
     bal = user.get("balance", 0)
-    left = user.get("last_withdraw", 0) + WITHDRAW_COOLDOWN_HOURS * 3600 - int(time.time())
-    if left > 0:
-        await update.message.reply_text(
-            f"⏳ You already made a withdraw request. Try again in {left // 3600}h {(left % 3600) // 60}m.")
-        return
     if bal < cfg("min_withdraw"):
-        await update.message.reply_text(
-            f"❌ Minimum withdraw is {money(cfg('min_withdraw'))}.\nYour balance: {money(bal)}")
+        text = (
+            f"{LOCK} <b>Minimum Withdraw is {money(cfg('min_withdraw'))}</b>\n"
+            f"{DIV}\n"
+            f"{BAG} <b>Your Balance:</b> {money(bal)}\n"
+            f"{ARROW} Sell more Gmails to reach the minimum!"
+        )
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton(m, callback_data=f"wd:{m}") for m in WITHDRAW_METHODS]])
-    await update.message.reply_text(f"💸 Balance: <b>{money(bal)}</b>\nChoose a method:",
-                                    parse_mode=ParseMode.HTML, reply_markup=kb)
+
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💚 bKash",   callback_data="wd:bKash"),
+        InlineKeyboardButton("🧡 Nagad",   callback_data="wd:Nagad"),
+        InlineKeyboardButton("💛 Binance", callback_data="wd:Binance"),
+    ]])
+    text = (
+        f"{CARD} <b>WITHDRAW FUNDS</b> {CARD}\n"
+        f"{DIV}\n"
+        f"{BAG} <b>Available:</b> {money(bal)}\n"
+        f"{ARROW} Choose your payout method below 👇"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
-# ---------------- TEXT ROUTER ----------------
+# ═══════════════════════════════════════════════════════════
+#  ⌨️  TEXT ROUTER
+# ═══════════════════════════════════════════════════════════
+
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await guard(update, ctx):
         return
+
     text = update.message.text.strip()
-    st = ctx.user_data.get("state")
-    uid = update.effective_user.id
+    st   = ctx.user_data.get("state")
+    uid  = update.effective_user.id
+
+    menu = {
+        MENU_SELL:     lambda: issue_account(update, ctx),
+        MENU_ACCOUNT:  lambda: show_account(update, ctx),
+        MENU_WITHDRAW: lambda: start_withdraw(update, ctx),
+        MENU_HISTORY:  lambda: show_history(update, ctx),
+        MENU_REFERRAL: lambda: show_referral(update, ctx),
+        MENU_SUPPORT:  lambda: update.message.reply_text(
+                            f"{BELL} <b>Support</b>\n{DIV}\n"
+                            f"{ARROW} Contact: @{SUPPORT_USERNAME}",
+                            parse_mode=ParseMode.HTML),
+    }
+    if text in menu:
+        ctx.user_data.clear()
+        await menu[text]()
+        return
 
     if st == "wd_addr":
         ctx.user_data["addr"] = text
         ctx.user_data["state"] = "wd_amt"
-        await update.message.reply_text("Enter the amount to withdraw:")
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="wd_cancel")]])
+        await update.message.reply_text(
+            f"{CARD} <b>Enter the withdrawal amount</b>\n"
+            f"{DIV}\n"
+            f"{ARROW} Minimum: {money(cfg('min_withdraw'))}",
+            parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
         return
+
     if st == "wd_amt":
         try:
             amt = float(text)
         except ValueError:
-            await update.message.reply_text("❌ Send a valid number.")
+            await update.message.reply_text(f"{CROSS} Please send a valid number.")
             return
         user = await A(get_user, uid)
-        bal = user.get("balance", 0)
+        bal  = user.get("balance", 0)
         if amt < cfg("min_withdraw") or amt > bal:
-            await update.message.reply_text(f"❌ Amount must be between {money(cfg('min_withdraw'))} and {money(bal)}.")
+            await update.message.reply_text(
+                f"{CROSS} Amount must be between "
+                f"{money(cfg('min_withdraw'))} and {money(bal)}.",
+                parse_mode=ParseMode.HTML,
+            )
             return
         method, addr = ctx.user_data["method"], ctx.user_data["addr"]
-        status, wid = await A(create_wd_sync, uid, method, addr, amt)
+        wid = await A(create_wd_sync, uid, method, addr, amt)
         ctx.user_data.clear()
-        if status == "cooldown":
+        if wid is None:
             await update.message.reply_text(
-                f"⏳ You can make only one withdraw request every {WITHDRAW_COOLDOWN_HOURS} hours.",
-                reply_markup=main_menu())
+                f"{CROSS} <b>Insufficient balance.</b>",
+                parse_mode=ParseMode.HTML, reply_markup=main_menu(),
+            )
             return
-        if status == "nobalance":
-            await update.message.reply_text("❌ Insufficient balance.", reply_markup=main_menu())
-            return
-        await update.message.reply_text("✅ Withdraw request submitted. Please wait for approval.",
-                                        reply_markup=main_menu())
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Paid", callback_data=f"wd_ok:{uid}:{wid}"),
-                                    InlineKeyboardButton("❌ Reject", callback_data=f"wd_no:{uid}:{wid}")]])
-        await notify_admins(ctx, f"💸 <b>Withdraw request</b>\nUser: {esc(update.effective_user.full_name)} (<code>{uid}</code>)\n"
-                                 f"Method: {method}\nAddress: <code>{esc(addr)}</code>\nAmount: {money(amt)}", kb)
+        await update.message.reply_text(
+            f"{CHECK} <b>Withdrawal Submitted!</b>\n"
+            f"{DIV}\n"
+            f"{CARD} Method: <b>{esc(method)}</b>\n"
+            f"{BAG} Amount: {money(amt)}\n"
+            f"{CLOCK} Status: <b>Pending</b>\n"
+            f"{DIV}\n"
+            f"{ARROW} You'll be notified once it's reviewed.",
+            parse_mode=ParseMode.HTML, reply_markup=main_menu(),
+        )
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Paid",   callback_data=f"wd_ok:{uid}:{wid}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"wd_no:{uid}:{wid}"),
+        ]])
+        await notify_admins(
+            ctx,
+            f"{CARD} <b>NEW WITHDRAWAL REQUEST</b>\n{DIV}\n"
+            f"{USER} User: <b>{esc(update.effective_user.full_name)}</b> ({mono(uid)})\n"
+            f"{CARD} Method: <b>{esc(method)}</b>\n"
+            f"{MAIL} Address: {mono(addr)}\n"
+            f"{BAG} Amount: {money(amt)}",
+            kb,
+        )
         return
 
-    menu = {
-        "💰 Sell Gmail": lambda: issue_account(update, ctx),
-        "👤 My Account": lambda: show_account(update, ctx),
-        "💸 Withdraw": lambda: start_withdraw(update, ctx),
-        "📜 History": lambda: show_history(update, ctx),
-        "🎁 Referral": lambda: show_referral(update, ctx),
-        "☎️ Support": lambda: update.message.reply_text(f"☎️ Support: @{SUPPORT_USERNAME}"),
-    }
-    if text in menu:
-        await menu[text]()
 
+# ═══════════════════════════════════════════════════════════
+#  🔔  CALLBACKS
+# ═══════════════════════════════════════════════════════════
 
-# ---------------- CALLBACKS ----------------
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
+    q    = update.callback_query
     data = q.data
-    uid = q.from_user.id
+    uid  = q.from_user.id
     await q.answer()
 
     if data == "chk":
         if await guard(update, ctx):
-            await q.message.reply_text("✅ Thanks! Send /start", reply_markup=main_menu())
+            await q.message.reply_text(
+                f"{CHECK} Thanks! Send /start to begin.",
+                reply_markup=main_menu(),
+            )
         return
 
-    # ----- admin actions -----
+    if data == "wd_cancel":
+        ctx.user_data.clear()
+        await q.edit_message_text(f"{CROSS} Withdrawal cancelled.")
+        return
+
     if data.startswith(("ok:", "no:", "wd_ok:", "wd_no:")):
         if not is_admin(uid):
+            await q.answer("Not allowed.", show_alert=True)
             return
         action, tuid, rid = data.split(":")
         if action in ("ok", "no"):
             acc = await A(decide_acc_sync, tuid, rid, action == "ok")
             if not acc:
-                await q.edit_message_text("Already handled.")
+                await q.edit_message_text(f"{WARN} Already handled.")
                 return
             if action == "ok":
-                msg = f"✅ Your Gmail <code>{acc['email']}@gmail.com</code> was approved! +{money(acc['rate'])}"
+                msg = (f"{CHECK} <b>Approved!</b>\n{DIV}\n"
+                       f"{MAIL} {mono(acc['email'] + '@gmail.com')}\n"
+                       f"{BAG} +{money(acc['rate'])} added to your balance {PARTY}")
             else:
-                msg = f"❌ Your Gmail <code>{acc['email']}@gmail.com</code> was rejected."
-            await q.edit_message_text(q.message.text + f"\n\n➡️ {'APPROVED' if action == 'ok' else 'REJECTED'}")
+                msg = (f"{CROSS} <b>Rejected</b>\n{DIV}\n"
+                       f"{MAIL} {mono(acc['email'] + '@gmail.com')}")
+            await q.edit_message_text(
+                q.message.text + f"\n\n{DIV}\n➡️ <b>{'APPROVED' if action == 'ok' else 'REJECTED'}</b>",
+                parse_mode=ParseMode.HTML,
+            )
             try:
                 await ctx.bot.send_message(int(tuid), msg, parse_mode=ParseMode.HTML)
             except Exception:
@@ -497,48 +870,89 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             w = await A(decide_wd_sync, tuid, rid, action == "wd_ok")
             if not w:
-                await q.edit_message_text("Already handled.")
+                await q.edit_message_text(f"{WARN} Already handled.")
                 return
-            msg = (f"✅ Your withdraw of {money(w['amount'])} was paid." if action == "wd_ok"
-                   else f"❌ Withdraw rejected. {money(w['amount'])} refunded to your balance.")
-            await q.edit_message_text(q.message.text + f"\n\n➡️ {'PAID' if action == 'wd_ok' else 'REJECTED'}")
+            msg = (
+                f"{CHECK} <b>Withdrawal Paid</b>\n{DIV}\n"
+                f"{BAG} {money(w['amount'])} sent via <b>{esc(w['method'])}</b> {ROCKET}"
+                if action == "wd_ok" else
+                f"{CROSS} <b>Withdrawal Rejected</b>\n{DIV}\n"
+                f"{BAG} {money(w['amount'])} refunded to your balance."
+            )
+            await q.edit_message_text(
+                q.message.text + f"\n\n{DIV}\n➡️ <b>{'PAID' if action == 'wd_ok' else 'REJECTED'}</b>",
+                parse_mode=ParseMode.HTML,
+            )
             try:
-                await ctx.bot.send_message(int(tuid), msg)
+                await ctx.bot.send_message(int(tuid), msg, parse_mode=ParseMode.HTML)
             except Exception:
                 pass
+
+            if action == "wd_ok":
+                u = await A(get_user, int(tuid))
+                await post_payout_proof(
+                    ctx,
+                    user_name=(u or {}).get("name", ""),
+                    method=w["method"],
+                    addr=w["address"],
+                    amount=w["amount"],
+                )
         return
 
     if not await guard(update, ctx):
         return
 
     if data == "new":
-        await q.message.delete()
+        try:
+            await q.message.delete()
+        except Exception:
+            pass
         await issue_account(update, ctx, regenerate=True)
 
     elif data.startswith("cancel:"):
         await A(cancel_sync, uid, data.split(":")[1])
-        await q.edit_message_text("❌ Cancelled.")
+        await q.edit_message_text(f"{CROSS} Cancelled.")
 
     elif data.startswith("done:"):
         acc = await A(submit_sync, uid, data.split(":")[1])
         if not acc:
-            await q.edit_message_text("⚠️ This request is no longer valid.")
+            await q.edit_message_text(f"{WARN} This request is no longer valid.")
             return
-        await q.edit_message_text(f"⏳ Submitted <code>{acc['email']}@gmail.com</code>. Waiting for admin approval.",
-                                  parse_mode=ParseMode.HTML)
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc['id']}"),
-                                    InlineKeyboardButton("❌ Reject", callback_data=f"no:{uid}:{acc['id']}")]])
-        await notify_channel(ctx, f"🆕 <b>New Gmail submission</b>\nUser: {esc(q.from_user.full_name)} (<code>{uid}</code>)\n"
-                                 f"Email: <code>{acc['email']}@gmail.com</code>\nPassword: <code>{acc['password']}</code>\n"
-                                 f"Reward: {money(acc['rate'])}", kb)
+        await q.edit_message_text(
+            f"{CLOCK} <b>Submitted!</b>\n{DIV}\n"
+            f"{MAIL} {mono(acc['email'] + '@gmail.com')}\n"
+            f"{DIV}\n{ARROW} Waiting for admin approval…",
+            parse_mode=ParseMode.HTML,
+        )
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc['id']}"),
+            InlineKeyboardButton("❌ Reject",  callback_data=f"no:{uid}:{acc['id']}"),
+        ]])
+        await notify_admins(
+            ctx,
+            f"{BELL} <b>NEW GMAIL SUBMISSION</b>\n{DIV}\n"
+            f"{USER} User: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
+            f"{MAIL} Email: {mono(acc['email'] + '@gmail.com')}\n"
+            f"{KEY} Password: {mono(acc['password'])}\n"
+            f"{BAG} Reward: {money(acc['rate'])}",
+            kb,
+        )
 
     elif data.startswith("wd:"):
         method = data.split(":")[1]
         ctx.user_data.update({"state": "wd_addr", "method": method})
-        await q.edit_message_text(f"Send your <b>{method}</b> number / address:", parse_mode=ParseMode.HTML)
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="wd_cancel")]])
+        await q.edit_message_text(
+            f"{CARD} <b>{esc(method)} Payout</b>\n{DIV}\n"
+            f"{ARROW} Send your <b>{esc(method)}</b> number / address:",
+            parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
 
 
-# ---------------- ADMIN COMMANDS ----------------
+# ═══════════════════════════════════════════════════════════
+#  🛠  ADMIN COMMANDS
+# ═══════════════════════════════════════════════════════════
+
 def admin_only(fn):
     async def wrapper(update, ctx):
         if is_admin(update.effective_user.id):
@@ -549,28 +963,50 @@ def admin_only(fn):
 @admin_only
 async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     n, s = await A(stats_sync)
-    await update.message.reply_text(
-        "🛠 <b>Admin Panel</b>\n\n"
-        f"👥 Users: {n}\n"
-        f"⏳ Pending Gmail: {s.get('pending_acc', 0)}\n"
-        f"✅ Approved Gmail: {s.get('approved_acc', 0)}\n"
-        f"💸 Pending withdraws: {s.get('pending_wd', 0)}\n\n"
-        f"Rate: {money(cfg('rate'))} | Min withdraw: {money(cfg('min_withdraw'))} | Ref bonus: {money(cfg('ref_bonus'))}\n\n"
-        "<b>Commands</b>\n/setrate 6\n/setmin 100\n/setref 1\n/ban USER_ID\n/unban USER_ID\n"
-        "/addbal USER_ID AMOUNT\n/broadcast message",
-        parse_mode=ParseMode.HTML)
+    text = (
+        f"{CROWN} <b>{BOT_NAME} — ADMIN PANEL</b> {CROWN}\n"
+        f"{DIV}\n"
+        f"{USER} <b>Total Users:</b> {n}\n"
+        f"{CLOCK} <b>Pending Gmail:</b> {s.get('pending_acc', 0)}\n"
+        f"{CHECK} <b>Approved Gmail:</b> {s.get('approved_acc', 0)}\n"
+        f"{CARD} <b>Pending Withdraws:</b> {s.get('pending_wd', 0)}\n"
+        f"{SUBDIV}\n"
+        f"{BELL} <b>Proof Channel:</b> "
+        f"{'✅ ' + esc(PROOF_CHANNEL) if PROOF_CHANNEL else '❌ not configured'}\n"
+        f"{SUBDIV}\n"
+        f"{GEM} Rate: {money(cfg('rate'))}\n"
+        f"{BAG} Min Withdraw: {money(cfg('min_withdraw'))}\n"
+        f"{GIFT} Ref Bonus: {money(cfg('ref_bonus'))}\n"
+        f"{SUBDIV}\n"
+        f"{ARROW} <b>Commands</b>\n"
+        f"{DOT} /setrate 6\n"
+        f"{DOT} /setmin 100\n"
+        f"{DOT} /setref 1\n"
+        f"{DOT} /ban USER_ID\n"
+        f"{DOT} /unban USER_ID\n"
+        f"{DOT} /addbal USER_ID AMOUNT\n"
+        f"{DOT} /broadcast message\n"
+        f"{DOT} /proof — test proof channel"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 @admin_only
 async def set_cfg_cmd(update, ctx):
-    key = {"/setrate": "rate", "/setmin": "min_withdraw", "/setref": "ref_bonus"}[update.message.text.split()[0].split("@")[0]]
+    cmd = update.message.text.split()[0].split("@")[0]
+    key = {"/setrate": "rate", "/setmin": "min_withdraw", "/setref": "ref_bonus"}[cmd]
     try:
         val = float(ctx.args[0])
+        if val <= 0:
+            raise ValueError
     except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /setrate 6")
+        await update.message.reply_text(f"{CROSS} Usage: {cmd} <positive number>")
         return
     await A(set_cfg_sync, key, val)
-    await update.message.reply_text(f"✅ {key} = {val}")
+    await update.message.reply_text(
+        f"{CHECK} <b>{key.replace('_', ' ').title()}</b> → <code>{val}</code>",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @admin_only
@@ -578,66 +1014,112 @@ async def ban_cmd(update, ctx):
     ban = update.message.text.startswith("/ban")
     try:
         ok = await A(set_ban_sync, int(ctx.args[0]), ban)
-        await update.message.reply_text("✅ Done" if ok else "User not found")
+        await update.message.reply_text(
+            f"{CHECK} {'Banned' if ban else 'Unbanned'}." if ok else f"{CROSS} User not found."
+        )
     except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /ban USER_ID")
+        await update.message.reply_text(f"{CROSS} Usage: /ban USER_ID")
 
 
 @admin_only
 async def addbal_cmd(update, ctx):
     try:
-        ok = await A(add_balance_sync, int(ctx.args[0]), float(ctx.args[1]))
-        await update.message.reply_text("✅ Balance updated" if ok else "User not found")
+        uid, amt = int(ctx.args[0]), float(ctx.args[1])
     except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /addbal USER_ID AMOUNT")
+        await update.message.reply_text(f"{CROSS} Usage: /addbal USER_ID AMOUNT")
+        return
+    ok = await A(add_balance_sync, uid, amt)
+    if ok:
+        direction = "added to" if amt >= 0 else "deducted from"
+        await update.message.reply_text(
+            f"{CHECK} {money(abs(amt))} {direction} user {mono(uid)}.",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await update.message.reply_text(f"{CROSS} User not found.")
 
 
 @admin_only
 async def broadcast_cmd(update, ctx):
     msg = update.message.text.partition(" ")[2].strip()
     if not msg:
-        await update.message.reply_text("Usage: /broadcast message")
+        await update.message.reply_text(f"{CROSS} Usage: /broadcast message")
         return
+    ids = await A(all_user_ids_sync)
     sent = 0
-    for uid in await A(all_user_ids_sync):
-        try:
-            await ctx.bot.send_message(int(uid), msg)
-            sent += 1
-        except Exception:
-            pass
+    failed = 0
+    for uid in ids:
+        for attempt in range(2):
+            try:
+                await ctx.bot.send_message(int(uid), msg)
+                sent += 1
+                break
+            except RetryAfter as e:
+                await asyncio.sleep(e.retry_after + 1)
+            except Exception:
+                if attempt == 0:
+                    await asyncio.sleep(0.1)
+                    continue
+                failed += 1
+                break
         await asyncio.sleep(0.05)
-    await update.message.reply_text(f"📢 Sent to {sent} users")
+    await update.message.reply_text(
+        f"{ROCKET} <b>Broadcast Complete</b>\n{DIV}\n"
+        f"{CHECK} Sent: <b>{sent}</b>\n"
+        f"{CROSS} Failed: <b>{failed}</b>",
+        parse_mode=ParseMode.HTML,
+    )
 
 
-# ---------------- KEEP-ALIVE WEB SERVER (for Render + UptimeRobot) ----------------
-class PingHandler(BaseHTTPRequestHandler):
-    def _ok(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
+@admin_only
+async def proof_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not PROOF_CHANNEL:
+        await update.message.reply_text(
+            f"{WARN} <b>Proof channel not configured.</b>\n{DIV}\n"
+            f"{ARROW} Set env var: <code>PROOF_CHANNEL=@your_channel</code>\n"
+            f"{ARROW} Then make the bot an admin in that channel.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
 
-    def do_GET(self):
-        self._ok()
-        self.wfile.write(b"Bot is running")
+    try:
+        await ctx.bot.send_message(
+            PROOF_CHANNEL,
+            f"{ROCKET} <b>WITHDRAWAL PAID</b> {ROCKET}\n"
+            f"{DIV}\n"
+            f"{USER} <b>User:</b> Test U.\n"
+            f"{CARD} <b>Method:</b> bKash\n"
+            f"{MAIL} <b>Account:</b> {mono('***1234')}\n"
+            f"{BAG} <b>Amount:</b> {money(100.0)}\n"
+            f"{CLOCK} <b>Time:</b> {time.strftime('%d %b %Y • %H:%M')}\n"
+            f"{DIV}\n"
+            f"{FIRE} <i>Instant payout — verified & paid.</i>",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+        await update.message.reply_text(
+            f"{CHECK} <b>Test proof sent to</b> {esc(PROOF_CHANNEL)}",
+            parse_mode=ParseMode.HTML,
+        )
+    except TelegramError as e:
+        await update.message.reply_text(
+            f"{CROSS} <b>Cannot post:</b> {esc(e)}\n{DIV}\n"
+            f"{WARN} Make sure the bot is <b>admin</b> in {esc(PROOF_CHANNEL)}.",
+            parse_mode=ParseMode.HTML,
+        )
 
-    def do_HEAD(self):
-        self._ok()
 
-    def log_message(self, *args):
-        pass  # keep logs clean
+# ═══════════════════════════════════════════════════════════
+#  🚀  MAIN
+# ═══════════════════════════════════════════════════════════
 
-
-def start_keep_alive():
-    port = int(os.getenv("PORT", "10000"))
-    server = HTTPServer(("0.0.0.0", port), PingHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    logging.info("Keep-alive server listening on port %s", port)
+async def _error_handler(update, ctx):
+    log.exception("Unhandled error", exc_info=ctx.error)
 
 
-# ---------------- MAIN ----------------
 def main():
-    start_keep_alive()
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_cmd))
     for c in ("setrate", "setmin", "setref"):
@@ -645,9 +1127,13 @@ def main():
     app.add_handler(CommandHandler(["ban", "unban"], ban_cmd))
     app.add_handler(CommandHandler("addbal", addbal_cmd))
     app.add_handler(CommandHandler("broadcast", broadcast_cmd))
+    app.add_handler(CommandHandler("proof", proof_cmd))
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    app.run_polling()
+
+    app.add_error_handler(_error_handler)
+    log.info("💎 %s Bot started", BOT_NAME)
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
