@@ -15,7 +15,9 @@ import os
 import random
 import secrets
 import string
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import firebase_admin
 from firebase_admin import credentials, db as rtdb
@@ -574,8 +576,34 @@ async def broadcast_cmd(update, ctx):
     await update.message.reply_text(f"📢 Sent to {sent} users")
 
 
+# ---------------- KEEP-ALIVE WEB SERVER (for Render + UptimeRobot) ----------------
+class PingHandler(BaseHTTPRequestHandler):
+    def _ok(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+
+    def do_GET(self):
+        self._ok()
+        self.wfile.write(b"Bot is running")
+
+    def do_HEAD(self):
+        self._ok()
+
+    def log_message(self, *args):
+        pass  # keep logs clean
+
+
+def start_keep_alive():
+    port = int(os.getenv("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), PingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    logging.info("Keep-alive server listening on port %s", port)
+
+
 # ---------------- MAIN ----------------
 def main():
+    start_keep_alive()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_cmd))
