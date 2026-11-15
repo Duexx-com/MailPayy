@@ -1,5 +1,5 @@
 """
-💎 MAILPAYY BOT (100K+ SCALABLE | IMAP AUTO-VERIFY | EN & BN)
+💎 MAILPAYY BOT (100K+ SCALABLE | EN & BN)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Users create Gmail accounts from bot-provided details and
 sell them for cash. Firebase Realtime Database backend.
@@ -20,7 +20,6 @@ Optional: REQUIRED_CHANNEL, PROOF_CHANNEL
 
 import asyncio
 import html
-import imaplib
 import json
 import logging
 import os
@@ -344,21 +343,6 @@ def gen_identity():
         if R(f"emails/{email}").get() is None:
             R(f"emails/{email}").set(True)
             return first, last, email, gen_password()
-
-
-# ═══════════════════════════════════════════════════════════
-#  ✉️  IMAP AUTO-VERIFICATION
-# ═══════════════════════════════════════════════════════════
-
-def verify_gmail_imap(email_full: str, password: str) -> bool:
-    try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-        mail.login(email_full, password)
-        mail.logout()
-        return True
-    except Exception as e:
-        log.warning(f"IMAP Check Failed for {email_full}: {e}")
-        return False
 
 
 # ═══════════════════════════════════════════════════════════
@@ -694,7 +678,7 @@ async def issue_account(update: Update, ctx: ContextTypes.DEFAULT_TYPE, regenera
     )
     footer = (
         f"{WARN} <b>{'সতর্কতা' if is_bn else 'Warning'}:</b> {'ঠিক এই তথ্যগুলোই ব্যবহার করুন।' if is_bn else 'Use these exact details.'}\n"
-        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else 'Donot change the password'}\n"
+        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else 'Do not change the password'}\n"
         f"• {'কোনো রিকভারি ইনফো অ্যাড করবেন না' if is_bn else 'Do not add recovery info'}\n"
         f"{DIV}\n"
         f"{ARROW} {'কাজ শেষ হলে নিচের বাটন চাপুন' if is_bn else 'Finished? Tap button below'} 👇"
@@ -918,7 +902,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
-#  🔔  CALLBACKS (WITH IMAP VERIFICATION)
+#  🔔  CALLBACKS
 # ═══════════════════════════════════════════════════════════
 
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1008,37 +992,15 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("done:"):
         aid = data.split(":")[1]
-        acc = R(f"accounts/{uid}/{aid}").get()
-        if not acc:
-            await q.edit_message_text(f"{WARN} Expired.", parse_mode=ParseMode.HTML)
-            return
-
-        full_email = f"{acc['email']}@gmail.com"
-        
-        await q.edit_message_text(
-            f"{CLOCK} <b>জিমেইল আইএমএপি (IMAP) ভেরিফাই করা হচ্ছে... দয়া করে অপেক্ষা করুন!</b>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # IMAP দিয়ে চেক করা হচ্ছে জিমেইল সচল কি না
-        is_active = await A(verify_gmail_imap, full_email, acc['password'])
-
-        if not is_active:
-            await q.edit_message_text(
-                f"{CROSS} <b>ভেরিফিকেশন ব্যর্থ হয়েছে!</b>\n{DIV}\n"
-                f"আপনার তৈরি করা জিমেইলটি ({mono(full_email)}) সঠিক নয় অথবা গুগলে লগইন করা যাচ্ছে না।\n"
-                f"দয়া করে সঠিক তথ্য দিয়ে আবার চেষ্টা করুন।",
-                parse_mode=ParseMode.HTML
-            )
-            return
-
         acc_submitted = await A(submit_sync, uid, aid)
         if not acc_submitted:
             await q.edit_message_text(f"{WARN} This request is no longer valid.", parse_mode=ParseMode.HTML)
             return
 
+        full_email = f"{acc_submitted['email']}@gmail.com"
+
         await q.edit_message_text(
-            f"{CHECK} <b>সফলভাবে ভেরিফাই ও সাবমিট হয়েছে!</b>\n"
+            f"{CHECK} <b>সফলভাবে সাবমিট হয়েছে!</b>\n"
             f"{DIV}\n"
             f"{MAIL} {mono(full_email)}\n"
             f"{DIV}\n{ARROW} এডমিন চেক করার পর ব্যালেন্স যোগ হবে...",
@@ -1046,16 +1008,16 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc['id']}"),
-            InlineKeyboardButton("❌ Reject",  callback_data=f"no:{uid}:{acc['id']}"),
+            InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc_submitted['id']}"),
+            InlineKeyboardButton("❌ Reject",  callback_data=f"no:{uid}:{acc_submitted['id']}"),
         ]])
         await notify_admins(
             ctx,
-            f"{BELL} <b>NEW VERIFIED GMAIL SUBMISSION</b>\n{DIV}\n"
+            f"{BELL} <b>NEW GMAIL SUBMISSION</b>\n{DIV}\n"
             f"{USER} User: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
             f"{MAIL} Email: {mono(full_email)}\n"
-            f"{KEY} Password: {mono(acc['password'])}\n"
-            f"{BAG} Reward: {money(acc['rate'])}",
+            f"{KEY} Password: {mono(acc_submitted['password'])}\n"
+            f"{BAG} Reward: {money(acc_submitted['rate'])}",
             kb,
         )
 
