@@ -5,11 +5,16 @@ Users create Gmail accounts from bot-provided details and
 sell them for cash. Firebase Realtime Database backend.
 Public proof channel posts ONLY on withdrawal paid.
 
-Install : pip install "python-telegram-bot>=21" firebase-admin
+Render Free Tier + UptimeRobot friendly:
+  • Webhook mode auto-enabled when RENDER_EXTERNAL_URL is set
+  • Polling mode for local development
+  • No 409 Conflict — safe for Render's health checks
+
+Install : pip install -r requirements.txt
 Env     : BOT_TOKEN, ADMIN_IDS, SUPPORT_USERNAME,
-          FIREBASE_DB_URL, FIREBASE_CREDENTIALS (JSON text
-          OR serviceAccountKey.json on disk)
+          FIREBASE_DB_URL, FIREBASE_CREDENTIALS
 Optional: REQUIRED_CHANNEL, PROOF_CHANNEL
+          (Render auto-sets RENDER_EXTERNAL_URL and PORT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -49,6 +54,9 @@ PROOF_CHANNEL     = os.getenv("PROOF_CHANNEL", "").strip()
 FIREBASE_DB_URL   = os.getenv("FIREBASE_DB_URL", "").strip()
 FIREBASE_CRED_STR = os.getenv("FIREBASE_CREDENTIALS", "").strip()
 
+RENDER_URL        = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+PORT              = int(os.getenv("PORT", "8080"))
+
 CUR              = "BDT"
 WITHDRAW_METHODS = ["bKash", "Nagad", "Binance"]
 DEFAULTS         = {"rate": 5.0, "min_withdraw": 50.0, "ref_bonus": 1.0}
@@ -74,6 +82,8 @@ def _validate_env():
         log.warning("⚠️ SUPPORT_USERNAME not set — placeholder shown to users.")
     if PROOF_CHANNEL:
         log.info("📢 Proof channel configured: %s", PROOF_CHANNEL)
+    if RENDER_URL:
+        log.info("🌐 Webhook mode — public URL: %s", RENDER_URL)
 
 
 _validate_env()
@@ -81,51 +91,19 @@ _validate_env()
 # ═══════════════════════════════════════════════════════════
 #  ✨  ANIMATED EMOJI SUPPORT
 # ═══════════════════════════════════════════════════════════
-#
-# How to add your own animated emoji:
-#   1. Forward any animated emoji to @JsonDumpBot in Telegram
-#   2. Copy the "custom_emoji_id" value from the JSON output
-#   3. Paste it as the value for the matching character below
-#
-# If a value is empty (""), the plain static emoji is used.
-# If an ID is wrong, Telegram will reject the whole message —
-# so ALWAYS verify with @JsonDumpBot before deploying.
-#
-# The IDs below are TRIAL values. Replace them with your own
-# verified IDs for guaranteed animation.
+#  Get real IDs with @JsonDumpBot — empty = plain emoji fallback.
 
 ANIMATED: dict[str, str] = {
-    "✨": "",     # sparkles
-    "🔥": "",     # fire
-    "💎": "",     # gem stone
-    "👑": "",     # crown
-    "⚡": "",     # lightning
-    "🎯": "",     # target
-    "🎉": "",     # party popper
-    "🚀": "",     # rocket
-    "🛡": "",     # shield
-    "📊": "",     # chart
-    "📜": "",     # scroll
-    "🎁": "",     # gift
-    "💰": "",     # money bag
-    "💳": "",     # card
-    "🔔": "",     # bell
-    "👋": "",     # wave
-    "✅": "",     # check
-    "❌": "",     # cross
-    "⏳": "",     # hourglass
-    "⚠": "",      # warning
-    "🔒": "",     # lock
-    "📧": "",     # email
-    "👤": "",     # user
-    "🔑": "",     # key
-    "🏆": "",     # trophy
-    "💫": "",     # sparkle
+    "✨": "", "🔥": "", "💎": "", "👑": "", "⚡": "",
+    "🎯": "", "🎉": "", "🚀": "", "🛡": "", "📊": "",
+    "📜": "", "🎁": "", "💰": "", "💳": "", "🔔": "",
+    "👋": "", "✅": "", "❌": "", "⏳": "", "⚠": "",
+    "🔒": "", "📧": "", "👤": "", "🔑": "", "🏆": "",
+    "💫": "",
 }
 
 
 def _emoji(char: str) -> str:
-    """Return animated <tg-emoji> tag if ID exists, else plain char."""
     eid = ANIMATED.get(char, "")
     if eid:
         return f'<tg-emoji emoji-id="{eid}">{char}</tg-emoji>'
@@ -1110,6 +1088,15 @@ async def proof_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
+#  🌐  HEALTH CHECK (for UptimeRobot — keeps Render awake)
+# ═══════════════════════════════════════════════════════════
+
+async def _health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Only triggered if someone sends /health to the bot
+    await update.message.reply_text("OK")
+
+
+# ═══════════════════════════════════════════════════════════
 #  🚀  MAIN
 # ═══════════════════════════════════════════════════════════
 
@@ -1117,10 +1104,11 @@ async def _error_handler(update, ctx):
     log.exception("Unhandled error", exc_info=ctx.error)
 
 
-def main():
+def _build_app() -> Application:
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("health", _health))
     app.add_handler(CommandHandler("admin", admin_cmd))
     for c in ("setrate", "setmin", "setref"):
         app.add_handler(CommandHandler(c, set_cfg_cmd))
@@ -1132,8 +1120,35 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
     app.add_error_handler(_error_handler)
-    log.info("💎 %s Bot started", BOT_NAME)
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    return app
+
+
+def main():
+    app = _build_app()
+
+    if RENDER_URL:
+        # ── PRODUCTION: webhook mode (Render free tier friendly) ──
+        webhook_path = BOT_TOKEN
+        webhook_url  = f"{RENDER_URL.rstrip('/')}/{webhook_path}"
+        log.info("🌐 Starting %s in WEBHOOK mode", BOT_NAME)
+        log.info("   Listen  : 0.0.0.0:%s", PORT)
+        log.info("   Webhook : %s", webhook_url)
+
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=webhook_path,
+            webhook_url=webhook_url,
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,   # avoids stale updates after restart
+        )
+    else:
+        # ── LOCAL DEV: polling mode ──
+        log.info("💻 Starting %s in POLLING mode (local dev)", BOT_NAME)
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
 
 
 if __name__ == "__main__":
