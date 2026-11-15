@@ -1,5 +1,5 @@
 """
-💎 MAILPAYY BOT (100K+ SCALABLE | FIXED CHANNEL & NAMES)
+💎 MAILPAYY BOT (100K+ SCALABLE | IMAP AUTO-VERIFY | EN & BN)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Users create Gmail accounts from bot-provided details and
 sell them for cash. Firebase Realtime Database backend.
@@ -20,6 +20,7 @@ Optional: REQUIRED_CHANNEL, PROOF_CHANNEL
 
 import asyncio
 import html
+import imaplib
 import json
 import logging
 import os
@@ -346,6 +347,21 @@ def gen_identity():
 
 
 # ═══════════════════════════════════════════════════════════
+#  ✉️  IMAP AUTO-VERIFICATION
+# ═══════════════════════════════════════════════════════════
+
+def verify_gmail_imap(email_full: str, password: str) -> bool:
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        mail.login(email_full, password)
+        mail.logout()
+        return True
+    except Exception as e:
+        log.warning(f"IMAP Check Failed for {email_full}: {e}")
+        return False
+
+
+# ═══════════════════════════════════════════════════════════
 #  🗄  DATABASE HELPERS
 # ═══════════════════════════════════════════════════════════
 
@@ -557,7 +573,7 @@ async def post_payout_proof(ctx, user_name: str, method: str, addr: str, amount:
 
 
 # ═══════════════════════════════════════════════════════════
-#  🧰  MENUS & HELPERS (FIXED CHANNEL CACHE LOOP)
+#  🧰  MENUS & HELPERS
 # ═══════════════════════════════════════════════════════════
 
 def get_menu(lang: str):
@@ -592,7 +608,6 @@ async def notify_admins(ctx, text, markup=None):
             log.warning("admin notify failed for %s: %s", a, e)
 
 
-# ক্যাশিং টাইম ২ সেকেন্ড করা হয়েছে যাতে ইউজার জয়েন করার সাথে সাথেই বট ডিটেক্ট করতে পারে
 _channel_cache: dict[int, tuple[float, bool]] = {}
 _CHANNEL_TTL = 2
 
@@ -903,7 +918,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
-#  🔔  CALLBACKS (FIXED CHANNEL JOIN CHECK)
+#  🔔  CALLBACKS (WITH IMAP VERIFICATION)
 # ═══════════════════════════════════════════════════════════
 
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -915,7 +930,6 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     if data == "chk":
-        # ক্যাশ ক্লিয়ার করে নতুন করে চেক করা যাতে সাথে সাথে কাজ করে
         if uid in _channel_cache:
             del _channel_cache[uid]
             
@@ -993,24 +1007,53 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"{CROSS} Cancelled.", parse_mode=ParseMode.HTML)
 
     elif data.startswith("done:"):
-        acc = await A(submit_sync, uid, data.split(":")[1])
+        aid = data.split(":")[1]
+        acc = R(f"accounts/{uid}/{aid}").get()
         if not acc:
             await q.edit_message_text(f"{WARN} Expired.", parse_mode=ParseMode.HTML)
             return
+
+        full_email = f"{acc['email']}@gmail.com"
+        
         await q.edit_message_text(
-            f"{CLOCK} <b>{'সাবমিট হয়েছে!' if is_bn else 'Submitted!'}</b>\n{DIV}\n"
-            f"{MAIL} {mono(acc['email'] + '@gmail.com')}\n{DIV}\n{ARROW} Waiting for review...",
+            f"{CLOCK} <b>জিমেইল আইএমএপি (IMAP) ভেরিফাই করা হচ্ছে... দয়া করে অপেক্ষা করুন!</b>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # IMAP দিয়ে চেক করা হচ্ছে জিমেইল সচল কি না
+        is_active = await A(verify_gmail_imap, full_email, acc['password'])
+
+        if not is_active:
+            await q.edit_message_text(
+                f"{CROSS} <b>ভেরিফিকেশন ব্যর্থ হয়েছে!</b>\n{DIV}\n"
+                f"আপনার তৈরি করা জিমেইলটি ({mono(full_email)}) সঠিক নয় অথবা গুগলে লগইন করা যাচ্ছে না।\n"
+                f"দয়া করে সঠিক তথ্য দিয়ে আবার চেষ্টা করুন।",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        acc_submitted = await A(submit_sync, uid, aid)
+        if not acc_submitted:
+            await q.edit_message_text(f"{WARN} This request is no longer valid.", parse_mode=ParseMode.HTML)
+            return
+
+        await q.edit_message_text(
+            f"{CHECK} <b>সফলভাবে ভেরিফাই ও সাবমিট হয়েছে!</b>\n"
+            f"{DIV}\n"
+            f"{MAIL} {mono(full_email)}\n"
+            f"{DIV}\n{ARROW} এডমিন চেক করার পর ব্যালেন্স যোগ হবে...",
             parse_mode=ParseMode.HTML,
         )
+        
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc['id']}"),
             InlineKeyboardButton("❌ Reject",  callback_data=f"no:{uid}:{acc['id']}"),
         ]])
         await notify_admins(
             ctx,
-            f"{BELL} <b>NEW GMAIL SUBMISSION</b>\n{DIV}\n"
+            f"{BELL} <b>NEW VERIFIED GMAIL SUBMISSION</b>\n{DIV}\n"
             f"{USER} User: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
-            f"{MAIL} Email: {mono(acc['email'] + '@gmail.com')}\n"
+            f"{MAIL} Email: {mono(full_email)}\n"
             f"{KEY} Password: {mono(acc['password'])}\n"
             f"{BAG} Reward: {money(acc['rate'])}",
             kb,
@@ -1098,7 +1141,7 @@ async def addbal_cmd(update, ctx):
 
 @admin_only
 async def broadcast_cmd(update, ctx):
-    msg = update.message.text.partition(" ")[2].strip()++
+    msg = update.message.text.partition(" ")[2].strip()
     if not msg:
         await update.message.reply_text(f"{CROSS} Usage: /broadcast message", parse_mode=ParseMode.HTML)
         return
