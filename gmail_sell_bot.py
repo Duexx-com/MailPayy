@@ -1,5 +1,5 @@
 """
-💎 MAILPAYY BOT (OPTIMIZED & ULTRA-FAST)
+💎 MAILPAYY BOT (ANIMATED EMOJIS | EN & BN | ULTRA-FAST)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Users create Gmail accounts from bot-provided details and
 sell them for cash. Firebase Realtime Database backend.
@@ -41,7 +41,7 @@ from telegram.ext import (
 )
 
 # ═══════════════════════════════════════════════════════════
-#  ⚙️  CONFIG
+#  ⚙️  CONFIG & TRANSLATIONS
 # ═══════════════════════════════════════════════════════════
 
 BOT_NAME          = "MailPayy"
@@ -59,7 +59,6 @@ PORT              = int(os.getenv("PORT", "8080"))
 WEBHOOK_PATH      = "tg-hook"
 
 CUR              = "BDT"
-WITHDRAW_METHODS = ["bKash", "Nagad", "Binance"]
 DEFAULTS         = {"rate": 5.0, "min_withdraw": 50.0, "ref_bonus": 1.0}
 
 logging.basicConfig(
@@ -79,51 +78,141 @@ def _validate_env():
         missing.append("FIREBASE_DB_URL")
     if missing:
         raise SystemExit(f"❌ Missing required env vars: {', '.join(missing)}")
-    if not SUPPORT_USERNAME:
-        log.warning("⚠️ SUPPORT_USERNAME not set — placeholder shown to users.")
-    if PROOF_CHANNEL:
-        log.info("📢 Proof channel configured: %s", PROOF_CHANNEL)
-    if RENDER_URL:
-        log.info("🌐 Webhook mode — public URL: %s", RENDER_URL)
 
 
 _validate_env()
 
 # ═══════════════════════════════════════════════════════════
-#  🎨  STYLE & EMOJI CONSTANTS
+#  ✨  TELEGRAM ANIMATED EMOJIS CONFIG
 # ═══════════════════════════════════════════════════════════
+# এখানে জনপ্রিয় টেলিগ্রাম অ্যানিমেটেড ইমোজি আইডি বসানো হয়েছে।
+# আপনি চাইলে @JsonDumpBot থেকে আপনার পছন্দের আইডি বসিয়ে বদলাতে পারবেন।
+
+ANIMATED: dict[str, str] = {
+    "✨": "5321275567060081617",
+    "🔥": "5316521303159150257",
+    "💎": "5323787699962845141",
+    "👑": "5321487312630782711",
+    "⚡": "5321023426538248035",
+    "🎯": "5321453641127368889",
+    "🎉": "5321226451634427971",
+    "🚀": "5321319194712937700",
+    "🛡": "5321398766708005471",
+    "📊": "5321048500796397331",
+    "📜": "5321166039407994885",
+    "🎁": "5321242343894227319",
+    "💰": "5323338909876335012",
+    "💳": "5321210104552692543",
+    "🔔": "5321056607605890211",
+    "👋": "5321114585075816582",
+    "✅": "5321312842670217992",
+    "❌": "5321174383149554365",
+    "⏳": "5321188246704200133",
+    "⚠️": "5321102186342142663",
+    "🔒": "5321354251410413621",
+    "📧": "5321288907731835199",
+    "👤": "5321378196045421001",
+    "🔑": "5321428910323925122",
+    "🏆": "5321401925184231044",
+    "💫": "5321238900154217003",
+}
+
+
+def _emoji(char: str) -> str:
+    eid = ANIMATED.get(char, "")
+    if eid:
+        return f'<tg-emoji emoji-id="{eid}">{char}</tg-emoji>'
+    return char
+
 
 DIV    = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 SUBDIV = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
-ARROW  = "⚡"
 DOT    = "•"
 
-STAR   = "✨"
-FIRE   = "🔥"
-GEM    = "💎"
-CROWN  = "👑"
-BOLT   = "⚡"
-TARGET = "🎯"
-PARTY  = "🎉"
-ROCKET = "🚀"
-SHIELD = "🛡"
-CHART  = "📊"
-SCROLL = "📜"
-GIFT   = "🎁"
-BAG    = "💰"
-CARD   = "💳"
-BELL   = "🔔"
-WAVE   = "👋"
-CHECK  = "✅"
-CROSS  = "❌"
-CLOCK  = "⏳"
-WARN   = "⚠️"
-LOCK   = "🔒"
-MAIL   = "📧"
-USER   = "👤"
-KEY    = "🔑"
-TROPHY = "🏆"
-SPARK  = "💫"
+STAR   = _emoji("✨")
+FIRE   = _emoji("🔥")
+GEM    = _emoji("💎")
+CROWN  = _emoji("👑")
+BOLT   = _emoji("⚡")
+ARROW  = _emoji("⚡")
+TARGET = _emoji("🎯")
+PARTY  = _emoji("🎉")
+ROCKET = _emoji("🚀")
+SHIELD = _emoji("🛡")
+CHART  = _emoji("📊")
+SCROLL = _emoji("📜")
+GIFT   = _emoji("🎁")
+BAG    = _emoji("💰")
+CARD   = _emoji("💳")
+BELL   = _emoji("🔔")
+WAVE   = _emoji("👋")
+CHECK  = _emoji("✅")
+CROSS  = _emoji("❌")
+CLOCK  = _emoji("⏳")
+WARN   = _emoji("⚠️")
+LOCK   = _emoji("🔒")
+MAIL   = _emoji("📧")
+USER   = _emoji("👤")
+KEY    = _emoji("🔑")
+TROPHY = _emoji("🏆")
+SPARK  = _emoji("💫")
+
+# ═══════════════════════════════════════════════════════════
+#  🌐  TEXT LOCALIZATION (EN & BN)
+# ═══════════════════════════════════════════════════════════
+
+LANGS = {
+    "en": {
+        "sell": "💎 Sell Gmail",
+        "account": "👑 My Account",
+        "withdraw": "💳 Withdraw",
+        "history": "📊 History",
+        "referral": "🎁 Referral",
+        "support": "🔔 Support",
+        "lang_btn": "🇧🇩 ভাষা পরিবর্তন করুন (Bangla)",
+        "welcome": (
+            f"{STAR} <b>WELCOME TO {{bot_name}}</b> {STAR}\n"
+            f"{DIV}\n"
+            f"{WAVE} Hello <b>{{name}}</b>!\n"
+            f"{GEM} Earn <b>{{rate}}</b> per approved Gmail account.\n"
+            f"{DIV}\n"
+            f"{ARROW} <b>Step 1</b> — Tap <b>Sell Gmail</b>\n"
+            f"{ARROW} <b>Step 2</b> — Create the account using provided details\n"
+            f"{ARROW} <b>Step 3</b> — Submit & get paid automatically!\n"
+            f"{DIV}\n"
+            f"{FIRE} <i>Start your earning journey right now!</i>"
+        ),
+        "banned": f"{LOCK} <b>You are banned from using this bot.</b>",
+        "join_channel": f"{BELL} <b>Please join our official channel to continue.</b>",
+        "joined_btn": "✅ I Have Joined",
+        "join_btn_text": "📢 Join Channel",
+    },
+    "bn": {
+        "sell": "💎 জিমেইল সেল করুন",
+        "account": "👑 আমার অ্যাকাউন্ট",
+        "withdraw": "💳 উইথড্র",
+        "history": "📊 হিস্ট্রি",
+        "referral": "🎁 রেফারেল",
+        "support": "🔔 সাপোর্ট",
+        "lang_btn": "🇬🇧 Change Language (English)",
+        "welcome": (
+            f"{STAR} <b>{{bot_name}} প্ল্যাটফর্মে স্বাগতম!</b> {STAR}\n"
+            f"{DIV}\n"
+            f"{WAVE} হ্যালো প্রিয় <b>{{name}}</b>!\n"
+            f"{GEM} প্রতিটি ভ্যালিড জিমেইল তৈরিতে আয় করুন <b>{{rate}}</b>\n"
+            f"{DIV}\n"
+            f"{ARROW} <b>ধাপ ১</b> — নিচ থেকে <b>জিমেইল সেল করুন</b> চাপুন\n"
+            f"{ARROW} <b>ধাপ ২</b> — আমাদের দেওয়া তথ্য দিয়ে জিমেইল তৈরি করুন\n"
+            f"{ARROW} <b>ধাপ ৩</b> — সাবমিট করে ইনস্ট্যান্ট ক্যাশ নিন!\n"
+            f"{DIV}\n"
+            f"{FIRE} <i>আপনার অনলাইন ইনকাম আজই শুরু করুন!</i>"
+        ),
+        "banned": f"{LOCK} <b>আপনি এই বট থেকে ব্যান হয়েছেন।</b>",
+        "join_channel": f"{BELL} <b>বটটি ব্যবহার করতে আমাদের অফিসিয়াল চ্যানেলে জয়েন করুন!</b>",
+        "joined_btn": "✅ জয়েন করেছি",
+        "join_btn_text": "📢 আমাদের চ্যানেলে জয়েন করুন",
+    }
+}
 
 
 def money(x) -> str:
@@ -248,7 +337,7 @@ def gen_identity():
 
 
 # ═══════════════════════════════════════════════════════════
-#  🗄  DATABASE HELPERS (NON-BLOCKING)
+#  🗄  DATABASE HELPERS
 # ═══════════════════════════════════════════════════════════
 
 def get_user(uid):
@@ -263,11 +352,23 @@ def ensure_user_sync(u, ref=None):
             "name": u.full_name, "username": u.username or "",
             "balance": 0, "total_earned": 0, "banned": False,
             "ref_by": ref_by, "ref_count": 0, "joined": int(time.time()),
+            "lang": "en",
         })
         if ref_by:
             add_num(f"users/{ref_by}/ref_count", 1)
         user = get_user(u.id)
     return user
+
+
+def get_user_lang(uid):
+    user = get_user(uid)
+    if user and "lang" in user:
+        return user["lang"]
+    return "en"
+
+
+def set_user_lang_sync(uid, lang):
+    R(f"users/{uid}/lang").set(lang)
 
 
 def issue_sync(uid, regenerate):
@@ -442,29 +543,22 @@ async def post_payout_proof(ctx, user_name: str, method: str, addr: str, amount:
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
         )
-        log.info("proof posted for %s (%s)", mask_name(user_name), method)
     except TelegramError as e:
         log.warning("proof channel post failed: %s", e)
 
 
 # ═══════════════════════════════════════════════════════════
-#  🧰  HELPERS & MENUS
+#  🧰  MENUS & HELPERS
 # ═══════════════════════════════════════════════════════════
 
-MENU_SELL     = f"{GEM} জিমেইল সেল করুন"
-MENU_ACCOUNT  = f"{CROWN} আমার অ্যাকাউন্ট"
-MENU_WITHDRAW = f"{CARD} উইথড্র"
-MENU_HISTORY  = f"{CHART} হিস্ট্রি"
-MENU_REFERRAL = f"{GIFT} রেফারেল"
-MENU_SUPPORT  = f"{BELL} সাপোর্ট"
-
-
-def main_menu():
+def get_menu(lang: str):
+    t = LANGS.get(lang, LANGS["en"])
     return ReplyKeyboardMarkup(
         [
-            [MENU_SELL,     MENU_ACCOUNT],
-            [MENU_WITHDRAW, MENU_HISTORY],
-            [MENU_REFERRAL, MENU_SUPPORT],
+            [t["sell"],     t["account"]],
+            [t["withdraw"], t["history"]],
+            [t["referral"], t["support"]],
+            [t["lang_btn"]],
         ],
         resize_keyboard=True,
     )
@@ -503,8 +597,7 @@ async def _channel_ok(ctx, uid: int) -> bool:
     try:
         m = await ctx.bot.get_chat_member(REQUIRED_CHANNEL, uid)
         ok = m.status not in ("left", "kicked")
-    except Exception as e:
-        log.warning("channel check failed: %s", e)
+    except Exception:
         ok = True
     _channel_cache[uid] = (now, ok)
     return ok
@@ -513,80 +606,85 @@ async def _channel_ok(ctx, uid: int) -> bool:
 async def guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
     u = update.effective_user
     user = await A(ensure_user_sync, u, None)
+    lang = user.get("lang", "en")
+    t = LANGS.get(lang, LANGS["en"])
+
     if user.get("banned"):
-        await update.effective_message.reply_text(
-            f"{LOCK} <b>আপনি এই বট থেকে ব্যান হয়েছেন।</b>",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.effective_message.reply_text(t["banned"], parse_mode=ParseMode.HTML)
         return False
     if not await _channel_ok(ctx, u.id):
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 আমাদের চ্যানেলে জয়েন করুন",
-                                  url=f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}")],
-            [InlineKeyboardButton("✅ জয়েন করেছি", callback_data="chk")],
+            [InlineKeyboardButton(t["join_btn_text"], url=f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}")],
+            [InlineKeyboardButton(t["joined_btn"], callback_data="chk")],
         ])
-        await update.effective_message.reply_text(
-            f"{BELL} <b>বটটি ব্যবহার করতে আমাদের অফিসিয়াল চ্যানেলে জয়েন করুন!</b>",
-            parse_mode=ParseMode.HTML, reply_markup=kb,
-        )
+        await update.effective_message.reply_text(t["join_channel"], parse_mode=ParseMode.HTML, reply_markup=kb)
         return False
     return True
 
 
 # ═══════════════════════════════════════════════════════════
-#  👤  USER COMMANDS (FAST & LUXURIOUS)
-# ════════════════════════════════════════════%.═══════════
+#  👤  USER COMMANDS
+# ═══════════════════════════════════════════════════════════
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ref = int(ctx.args[0]) if ctx.args and ctx.args[0].isdigit() else None
-    await A(ensure_user_sync, update.effective_user, ref)
+    u = update.effective_user
+    await A(ensure_user_sync, u, ref)
     if not await guard(update, ctx):
         return
     ctx.user_data.clear()
-    name = esc(update.effective_user.first_name)
-    text = (
-        f"{STAR} <b>{BOT_NAME.upper()} প্ল্যাটফর্মে স্বাগতম!</b> {STAR}\n"
-        f"{DIV}\n"
-        f"{WAVE} হ্যালো প্রিয় <b>{name}</b>!\n"
-        f"{GEM} প্রতিটি ভ্যালিড জিমেইল তৈরিতে আয় করুন <b>{money(cfg('rate'))}</b>\n"
-        f"{DIV}\n"
-        f"{ARROW} <b>ধাপ ১</b> — নিচ থেকে <b>{MENU_SELL}</b> চাপুন\n"
-        f"{ARROW} <b>ধাপ ২</b> — আমাদের দেওয়া তথ্য দিয়ে জিমেইল তৈরি করুন\n"
-        f"{ARROW} <b>ধাপ ৩</b> — সাবমিট করে ইনস্ট্যান্ট ক্যাশ নিন!\n"
-        f"{DIV}\n"
-        f"{FIRE} <i>আপনার অনলাইন ইনকাম আজই শুরু করুন!</i>"
-    )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu())
+    lang = await A(get_user_lang, u.id)
+    t = LANGS.get(lang, LANGS["en"])
+
+    name = esc(u.first_name)
+    text = t["welcome"].format(bot_name=BOT_NAME.upper(), name=name, rate=money(cfg('rate')))
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=get_menu(lang))
+
+
+async def toggle_lang(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    current_lang = await A(get_user_lang, uid)
+    new_lang = "bn" if current_lang == "en" else "en"
+    await A(set_user_lang_sync, uid, new_lang)
+    
+    msg = f"{SPARK} ভাষা সফলভাবে বাংলায় পরিবর্তন করা হয়েছে!" if new_lang == "bn" else f"{SPARK} Language successfully switched to English!"
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=get_menu(new_lang))
 
 
 async def issue_account(update: Update, ctx: ContextTypes.DEFAULT_TYPE, regenerate=False):
     uid = update.effective_user.id
+    lang = await A(get_user_lang, uid)
     await _typing(ctx, update.effective_chat.id)
     async with _lock_for(uid):
         row = await A(issue_sync, uid, regenerate)
 
+    is_bn = (lang == "bn")
     body = (
         f"{USER} <b>First Name:</b> {mono(row['first'])}\n"
         f"{USER} <b>Last Name:</b>  {mono(row['last'])}\n"
         f"{MAIL} <b>Email ID:</b>   {mono(row['email'] + '@gmail.com')}\n"
         f"{KEY}  <b>Password:</b>   {mono(row['password'])}\n"
         f"{DIV}\n"
-        f"{BAG}  <b>রিওয়ার্ড:</b> {money(row['rate'])}"
+        f"{BAG}  <b>{'রিওয়ার্ড' if is_bn else 'Reward'}:</b> {money(row['rate'])}"
     )
     footer = (
-        f"{WARN} <b>সতর্কতা:</b> ঠিক এই তথ্যগুলোই ব্যবহার করুন।\n"
-        f"• পাসওয়ার্ড পরিবর্তন করবেন না\n"
-        f"• কোনো রিকভারি ইনফো অ্যাড করবেন না\n"
+        f"{WARN} <b>{'সতর্কতা' if is_bn else 'Warning'}:</b> {'ঠিক এই তথ্যগুলোই ব্যবহার করুন।' if is_bn else 'Use these exact details.'}\n"
+        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else "Don't change the password"}\n"
+        f"• {'কোনো রিকভারি ইনফো অ্যাড করবেন না' if is_bn else "Don't add recovery info"}\n"
         f"{DIV}\n"
-        f"{ARROW} কাজ শেষ হলে নিচের <b>✅ DONE</b> বাটনে ক্লিক করুন 👇"
+        f"{ARROW} {'কাজ শেষ হলে নিচের বাটন চাপুন' if is_bn else 'Finished? Tap button below'} 👇"
     )
-    text = f"{STAR} <b>নতুন জিমেইল ডিটেইলস</b> {STAR}\n{DIV}\n{body}\n{DIV}\n{footer}"
+    text = f"{STAR} <b>{'নতুন জিমেইল ডিটেইলস' if is_bn else 'NEW GMAIL DETAILS'}</b> {STAR}\n{DIV}\n{body}\n{DIV}\n{footer}"
+
+    btn_done = "✅ কাজ শেষ (Submit)" if is_bn else "✅ DONE (Submit)"
+    btn_new = "🔄 নতুন ডিটেইলস" if is_bn else "🔄 New Details"
+    btn_cancel = "❌ বাতিল" if is_bn else "❌ Cancel"
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ কাজ শেষ (Submit for Review)", callback_data=f"done:{row['id']}")],
+        [InlineKeyboardButton(btn_done, callback_data=f"done:{row['id']}")],
         [
-            InlineKeyboardButton("🔄 নতুন ডিটেইলস নিন", callback_data="new"),
-            InlineKeyboardButton("❌ বাতিল করুন", callback_data=f"cancel:{row['id']}"),
+            InlineKeyboardButton(btn_new, callback_data="new"),
+            InlineKeyboardButton(btn_cancel, callback_data=f"cancel:{row['id']}"),
         ],
     ])
     await ctx.bot.send_message(update.effective_chat.id, text,
@@ -595,41 +693,47 @@ async def issue_account(update: Update, ctx: ContextTypes.DEFAULT_TYPE, regenera
 
 async def show_account(update, ctx):
     uid = update.effective_user.id
+    lang = await A(get_user_lang, uid)
     user = await A(get_user, uid)
     c = await A(count_status, uid)
+    is_bn = (lang == "bn")
+
     body = (
-        f"{USER} <b>ইউজার আইডি:</b> {mono(uid)}\n"
-        f"{BAG}  <b>মূল ব্যালেন্স:</b> {money(user.get('balance', 0))}\n"
-        f"{CHART} <b>মোট আয়:</b>      {money(user.get('total_earned', 0))}\n"
+        f"{USER} <b>{'ইউজার আইডি' if is_bn else 'User ID'}:</b> {mono(uid)}\n"
+        f"{BAG}  <b>{'মূল ব্যালেন্স' if is_bn else 'Balance'}:</b> {money(user.get('balance', 0))}\n"
+        f"{CHART} <b>{'মোট আয়' if is_bn else 'Total Earned'}:</b> {money(user.get('total_earned', 0))}\n"
         f"{SUBDIV}\n"
-        f"{CHECK} <b>অনুমোদিত:</b>   {c.get('approved', 0)}\n"
-        f"{CLOCK} <b>পেন্ডিং:</b>     {c.get('pending', 0)}\n"
-        f"{CROSS} <b>রিজেক্টেড:</b>  {c.get('rejected', 0)}"
+        f"{CHECK} <b>{'অনুমোদিত' if is_bn else 'Approved'}:</b>   {c.get('approved', 0)}\n"
+        f"{CLOCK} <b>{'পেন্ডিং' if is_bn else 'Pending'}:</b>     {c.get('pending', 0)}\n"
+        f"{CROSS} <b>{'রিজেক্টেড' if is_bn else 'Rejected'}:</b>  {c.get('rejected', 0)}"
     )
-    text = f"{CROWN} <b>অ্যাকাউন্ট ড্যাশবোর্ড</b> {CROWN}\n{DIV}\n{body}"
+    text = f"{CROWN} <b>{'অ্যাকাউন্ট ড্যাশবোর্ড' if is_bn else 'ACCOUNT DASHBOARD'}</b> {CROWN}\n{DIV}\n{body}"
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def show_history(update, ctx):
+    uid = update.effective_user.id
+    lang = await A(get_user_lang, uid)
+    is_bn = (lang == "bn")
     icons = {"approved": CHECK, "pending": CLOCK, "rejected": CROSS, "paid": CHECK}
-    accs, wds = await A(history_sync, update.effective_user.id)
+    accs, wds = await A(history_sync, uid)
 
     acc_lines = "\n".join(
         f"{icons.get(a['status'], CLOCK)} {mono(a['email'] + '@gmail.com')} — <b>{a['status']}</b>"
         for a in accs
-    ) or f"{DOT} <i>কোনো সাবমিশন নেই</i>"
+    ) or f"{DOT} <i>{'কোনো সাবমিশন নেই' if is_bn else 'No submissions yet'}</i>"
 
     wd_lines = "\n".join(
         f"{icons.get(w['status'], CLOCK)} {money(w['amount'])} via <b>{esc(w['method'])}</b> — <b>{w['status']}</b>"
         for _, w in wds
-    ) or f"{DOT} <i>কোনো উইথড্র হিস্ট্রি নেই</i>"
+    ) or f"{DOT} <i>{'কোনো উইথড্র হিস্ট্রি নেই' if is_bn else 'No withdrawals yet'}</i>"
 
     text = (
-        f"{SCROLL} <b>আপনার সাম্প্রতিক হিস্ট্রি</b> {SCROLL}\n"
+        f"{SCROLL} <b>{'আপনার সাম্প্রতিক হিস্ট্রি' if is_bn else 'RECENT ACTIVITY'}</b> {SCROLL}\n"
         f"{DIV}\n"
-        f"{MAIL} <b>জিমেইল সাবমিশনস</b>\n"
+        f"{MAIL} <b>{'জিমেইল সাবমিশনস' if is_bn else 'Gmail Submissions'}</b>\n"
         f"{SUBDIV}\n{acc_lines}\n\n"
-        f"{CARD} <b>উইথড্রয়ালস</b>\n"
+        f"{CARD} <b>{'উইথড্রয়ালস' if is_bn else 'Withdrawals'}</b>\n"
         f"{SUBDIV}\n{wd_lines}"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -637,38 +741,43 @@ async def show_history(update, ctx):
 
 async def show_referral(update, ctx):
     uid = update.effective_user.id
+    lang = await A(get_user_lang, uid)
     user = await A(get_user, uid)
+    is_bn = (lang == "bn")
     link = f"https://t.me/{ctx.bot.username}?start={uid}"
+    
     text = (
-        f"{GIFT} <b>রেফারেল প্রোগ্রাম ও বোনাস</b> {GIFT}\n"
+        f"{GIFT} <b>{'রেফারেল প্রোগ্রাম ও বোনাস' if is_bn else 'REFERRAL PROGRAM'}</b> {GIFT}\n"
         f"{DIV}\n"
-        f"{TARGET} বন্ধুকে আমন্ত্রণ জানান এবং প্রতিটি রেফারের প্রথম জিমেইল অ্যাপ্রুভে পান <b>{money(cfg('ref_bonus'))}</b> বোনাস!\n"
+        f"{TARGET} {'বন্ধু আনুন এবং প্রথম জিমেইল অ্যাপ্রুভে পান' if is_bn else 'Invite friends and earn'} <b>{money(cfg('ref_bonus'))}</b> {'বোনাস!' if is_bn else 'bonus!'}\n"
         f"{SUBDIV}\n"
-        f"{ARROW} <b>আপনার রেফারেল লিংক:</b>\n"
+        f"{ARROW} <b>{'আপনার রেফারেল লিংক' if is_bn else 'Your Link'}:</b>\n"
         f"<code>{esc(link)}</code>\n"
         f"{SUBDIV}\n"
-        f"{USER} <b>মোট রেফার করেছেন:</b> {user.get('ref_count', 0)} জন\n"
+        f"{USER} <b>{'মোট রেফার করেছেন' if is_bn else 'Invited'}:</b> {user.get('ref_count', 0)} {'জন' if is_bn else 'friends'}\n"
         f"{DIV}\n"
-        f"{FIRE} <i>লিংক শেয়ার করুন এবং প্যাসিভ ইনকাম বাড়ান!</i>"
+        f"{FIRE} <i>{'লিংক শেয়ার করুন এবং আয় বাড়ান!' if is_bn else 'Share your link & grow!'}</i>"
     )
+    btn_share = "📤 বন্ধুদের সাথে শেয়ার করুন" if is_bn else "📤 Share Link"
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("📤 বন্ধুদের সাথে শেয়ার করুন",
-                             url=f"https://t.me/share/url?url={link}&text=Join%20MailPayy%20and%20earn%20money%20online!")
+        InlineKeyboardButton(btn_share, url=f"https://t.me/share/url?url={link}&text=Join%20MailPayy%20and%20earn%20money!")
     ]])
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 async def start_withdraw(update, ctx):
-    user = await A(get_user, update.effective_user.id)
+    uid = update.effective_user.id
+    lang = await A(get_user_lang, uid)
+    user = await A(get_user, uid)
     bal = user.get("balance", 0)
+    is_bn = (lang == "bn")
+
     if bal < cfg("min_withdraw"):
         text = (
-            f"{LOCK} <b>অপর্যাপ্ত ব্যালেন্স!</b>\n"
+            f"{LOCK} <b>{'অপর্যাপ্ত ব্যালেন্স!' if is_bn else 'Insufficient Balance!'}</b>\n"
             f"{DIV}\n"
-            f"{ARROW} সর্বনিম্ন উইথড্র: <b>{money(cfg('min_withdraw'))}</b>\n"
-            f"{BAG} আপনার ব্যালেন্স: <b>{money(bal)}</b>\n"
-            f"{DIV}\n"
-            f"⚡ আরও জিমেইল সেল করে উইথড্র লিমিট পূরণ করুন!"
+            f"{ARROW} {'সর্বনিম্ন উইথড্র' if is_bn else 'Minimum Withdraw'}: <b>{money(cfg('min_withdraw'))}</b>\n"
+            f"{BAG} {'আপনার ব্যালেন্স' if is_bn else 'Your Balance'}: <b>{money(bal)}</b>\n"
         )
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
@@ -679,10 +788,10 @@ async def start_withdraw(update, ctx):
         InlineKeyboardButton("💛 Binance", callback_data="wd:Binance"),
     ]])
     text = (
-        f"{CARD} <b>টাকা উইথড্র করুন</b> {CARD}\n"
+        f"{CARD} <b>{'টাকা উইথড্র করুন' if is_bn else 'WITHDRAW FUNDS'}</b> {CARD}\n"
         f"{DIV}\n"
-        f"{BAG} <b>উইথড্র যোগ্য ব্যালেন্স:</b> {money(bal)}\n"
-        f"{ARROW} পেমেন্ট মেথড সিলেক্ট করুন নিচে থেকে 👇"
+        f"{BAG} <b>{'উপলব্ধ ব্যালেন্স' if is_bn else 'Available'}:</b> {money(bal)}\n"
+        f"{ARROW} {'পেমেন্ট মেথড সিলেক্ট করুন নিচে থেকে' if is_bn else 'Choose payout method below'} 👇"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
@@ -698,16 +807,24 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     st   = ctx.user_data.get("state")
     uid  = update.effective_user.id
+    lang = await A(get_user_lang, uid)
+    is_bn = (lang == "bn")
+
+    t = LANGS.get(lang, LANGS["en"])
+
+    if text == t["lang_btn"]:
+        await toggle_lang(update, ctx)
+        return
 
     menu = {
-        MENU_SELL:     lambda: issue_account(update, ctx),
-        MENU_ACCOUNT:  lambda: show_account(update, ctx),
-        MENU_WITHDRAW: lambda: start_withdraw(update, ctx),
-        MENU_HISTORY:  lambda: show_history(update, ctx),
-        MENU_REFERRAL: lambda: show_referral(update, ctx),
-        MENU_SUPPORT:  lambda: update.message.reply_text(
-                            f"{BELL} <b>কাস্টমার সাপোর্ট</b>\n{DIV}\n"
-                            f"{ARROW} যেকোনো সমস্যায় যোগাযোগ করুন: @{SUPPORT_USERNAME}",
+        t["sell"]:     lambda: issue_account(update, ctx),
+        t["account"]:  lambda: show_account(update, ctx),
+        t["withdraw"]: lambda: start_withdraw(update, ctx),
+        t["history"]:  lambda: show_history(update, ctx),
+        t["referral"]: lambda: show_referral(update, ctx),
+        t["support"]:  lambda: update.message.reply_text(
+                            f"{BELL} <b>{'সাপোর্ট' if is_bn else 'Support'}</b>\n{DIV}\n"
+                            f"{ARROW} Contact: @{SUPPORT_USERNAME}",
                             parse_mode=ParseMode.HTML),
     }
     if text in menu:
@@ -718,11 +835,12 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if st == "wd_addr":
         ctx.user_data["addr"] = text
         ctx.user_data["state"] = "wd_amt"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ বাতিল", callback_data="wd_cancel")]])
+        btn_cancel = "❌ বাতিল" if is_bn else "❌ Cancel"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(btn_cancel, callback_data="wd_cancel")]])
         await update.message.reply_text(
-            f"{CARD} <b>উইথড্র অ্যামাউন্ট লিখুন</b>\n"
+            f"{CARD} <b>{'উইথড্র অ্যামাউন্ট লিখুন' if is_bn else 'Enter withdrawal amount'}</b>\n"
             f"{DIV}\n"
-            f"{ARROW} সর্বনিম্ন অ্যামাউন্ট: {money(cfg('min_withdraw'))}",
+            f"{ARROW} {'সর্বনিম্ন' if is_bn else 'Minimum'}: {money(cfg('min_withdraw'))}",
             parse_mode=ParseMode.HTML, reply_markup=kb,
         )
         return
@@ -731,13 +849,13 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             amt = float(text)
         except ValueError:
-            await update.message.reply_text(f"{CROSS} দয়া করে একটি সঠিক সংখ্যা প্রদান করুন।")
+            await update.message.reply_text(f"{CROSS} {'সঠিক সংখ্যা দিন।' if is_bn else 'Provide valid number.'}", parse_mode=ParseMode.HTML)
             return
         user = await A(get_user, uid)
         bal  = user.get("balance", 0)
         if amt < cfg("min_withdraw") or amt > bal:
             await update.message.reply_text(
-                f"{CROSS} অ্যামাউন্ট অবশ্যই {money(cfg('min_withdraw'))} থেকে {money(bal)} এর মধ্যে হতে হবে।",
+                f"{CROSS} {'সীমা অতিক্রম করেছে।' if is_bn else 'Invalid amount range.'}",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -746,80 +864,75 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.clear()
         if wid is None:
             await update.message.reply_text(
-                f"{CROSS} <b>অপর্যাপ্ত ব্যালেন্স।</b>",
-                parse_mode=ParseMode.HTML, reply_markup=main_menu(),
+                f"{CROSS} <b>{'অপর্যাপ্ত ব্যালেন্স।' if is_bn else 'Insufficient balance.'}</b>",
+                parse_mode=ParseMode.HTML, reply_markup=get_menu(lang),
             )
             return
         await update.message.reply_text(
-            f"{CHECK} <b>উইথড্র রিকোয়েস্ট সফল হয়েছে!</b>\n"
+            f"{CHECK} <b>{'উইথড্র সফল হয়েছে!' if is_bn else 'Withdrawal Submitted!'}</b>\n"
             f"{DIV}\n"
-            f"{CARD} মেথড: <b>{esc(method)}</b>\n"
-            f"{BAG} অ্যামাউন্ট: {money(amt)}\n"
-            f"{CLOCK} স্ট্যাটাস: <b>Pending (যাচাই চলছে)</b>\n"
-            f"{DIV}\n"
-            f"{ARROW} এডমিন রিভিউ করার পর আপনার পেমেন্ট পাঠানো হবে।",
-            parse_mode=ParseMode.HTML, reply_markup=main_menu(),
+            f"{CARD} Method: <b>{esc(method)}</b>\n"
+            f"{BAG} Amount: {money(amt)}\n"
+            f"{CLOCK} Status: <b>Pending</b>",
+            parse_mode=ParseMode.HTML, reply_markup=get_menu(lang),
         )
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Paid (পরিশোধিত)", callback_data=f"wd_ok:{uid}:{wid}"),
-            InlineKeyboardButton("❌ Reject (বাতিল)", callback_data=f"wd_no:{uid}:{wid}"),
+            InlineKeyboardButton("✅ Paid",   callback_data=f"wd_ok:{uid}:{wid}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"wd_no:{uid}:{wid}"),
         ]])
         await notify_admins(
             ctx,
-            f"{CARD} <b>নতুন উইথড্র রিকোয়েস্ট!</b>\n{DIV}\n"
-            f"{USER} ইউজার: <b>{esc(update.effective_user.full_name)}</b> ({mono(uid)})\n"
-            f"{CARD} মেথড: <b>{esc(method)}</b>\n"
-            f"{MAIL} অ্যাকাউন্ট: {mono(addr)}\n"
-            f"{BAG} অ্যামাউন্ট: {money(amt)}",
+            f"{CARD} <b>NEW WITHDRAWAL REQUEST</b>\n{DIV}\n"
+            f"{USER} User: <b>{esc(update.effective_user.full_name)}</b> ({mono(uid)})\n"
+            f"{CARD} Method: <b>{esc(method)}</b>\n"
+            f"{MAIL} Address: {mono(addr)}\n"
+            f"{BAG} Amount: {money(amt)}",
             kb,
         )
         return
 
 
 # ═══════════════════════════════════════════════════════════
-#  🔔  CALLBACKS (INSTANT RESPONSE)
+#  🔔  CALLBACKS
 # ═══════════════════════════════════════════════════════════
 
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q    = update.callback_query
     data = q.data
     uid  = q.from_user.id
+    lang = await A(get_user_lang, uid)
+    is_bn = (lang == "bn")
     await q.answer()
 
     if data == "chk":
         if await guard(update, ctx):
             await q.message.reply_text(
-                f"{CHECK} ধন্যবাদ! বট ব্যবহার করতে /start পাঠান।",
-                reply_markup=main_menu(),
+                f"{CHECK} {'ধন্যবাদ!' if is_bn else 'Thanks!'} Send /start.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_menu(lang),
             )
         return
 
     if data == "wd_cancel":
         ctx.user_data.clear()
-        await q.edit_message_text(f"{CROSS} উইথড্র প্রক্রিয়া বাতিল করা হয়েছে।")
+        await q.edit_message_text(f"{CROSS} {'বাতিল করা হয়েছে।' if is_bn else 'Cancelled.'}", parse_mode=ParseMode.HTML)
         return
 
     if data.startswith(("ok:", "no:", "wd_ok:", "wd_no:")):
         if not is_admin(uid):
-            await q.answer("আপনার অনুমতি নেই।", show_alert=True)
+            await q.answer("Not allowed.", show_alert=True)
             return
         action, tuid, rid = data.split(":")
         if action in ("ok", "no"):
             acc = await A(decide_acc_sync, tuid, rid, action == "ok")
             if not acc:
-                await q.edit_message_text(f"{WARN} এটি ইতিমধ্যে প্রসেস করা হয়েছে।")
+                await q.edit_message_text(f"{WARN} Already handled.", parse_mode=ParseMode.HTML)
                 return
             if action == "ok":
-                msg = (f"{CHECK} <b>আপনার জিমেইল অ্যাপ্রুভ হয়েছে!</b>\n{DIV}\n"
-                       f"{MAIL} {mono(acc['email'] + '@gmail.com')}\n"
-                       f"{BAG} +{money(acc['rate'])} আপনার ব্যালেন্সে যোগ হয়েছে {PARTY}")
+                msg = f"{CHECK} <b>Approved!</b>\n{DIV}\n{MAIL} {mono(acc['email'] + '@gmail.com')}\n{BAG} +{money(acc['rate'])} {PARTY}"
             else:
-                msg = (f"{CROSS} <b>আপনার জিমেইল রিজেক্ট করা হয়েছে</b>\n{DIV}\n"
-                       f"{MAIL} {mono(acc['email'] + '@gmail.com')}")
-            await q.edit_message_text(
-                q.message.text + f"\n\n{DIV}\n➡️ <b>{'APPROVED' if action == 'ok' else 'REJECTED'}</b>",
-                parse_mode=ParseMode.HTML,
-            )
+                msg = f"{CROSS} <b>Rejected</b>\n{DIV}\n{MAIL} {mono(acc['email'] + '@gmail.com')}"
+            await q.edit_message_text(q.message.text + f"\n\n{DIV}\n➡️ <b>{'APPROVED' if action == 'ok' else 'REJECTED'}</b>", parse_mode=ParseMode.HTML)
             try:
                 await ctx.bot.send_message(int(tuid), msg, parse_mode=ParseMode.HTML)
             except Exception:
@@ -827,19 +940,14 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             w = await A(decide_wd_sync, tuid, rid, action == "wd_ok")
             if not w:
-                await q.edit_message_text(f"{WARN} এটি ইতিমধ্যে প্রসেস করা হয়েছে।")
+                await q.edit_message_text(f"{WARN} Already handled.", parse_mode=ParseMode.HTML)
                 return
             msg = (
-                f"{CHECK} <b>উইথড্র সফলভাবে পেমেন্ট করা হয়েছে!</b>\n{DIV}\n"
-                f"{BAG} {money(w['amount'])} পাঠানো হয়েছে <b>{esc(w['method'])}</b> এর মাধ্যমে {ROCKET}"
+                f"{CHECK} <b>Withdrawal Paid</b> {ROCKET}\n{DIV}\n{BAG} {money(w['amount'])} sent via {esc(w['method'])}"
                 if action == "wd_ok" else
-                f"{CROSS} <b>উইথড্র রিকোয়েস্ট রিজেক্ট হয়েছে</b>\n{DIV}\n"
-                f"{BAG} {money(w['amount'])} আপনার ব্যালেন্সে রিফান্ড করা হয়েছে।"
+                f"{CROSS} <b>Withdrawal Rejected</b>\n{DIV}\nRefunded."
             )
-            await q.edit_message_text(
-                q.message.text + f"\n\n{DIV}\n➡️ <b>{'PAID' if action == 'wd_ok' else 'REJECTED'}</b>",
-                parse_mode=ParseMode.HTML,
-            )
+            await q.edit_message_text(q.message.text + f"\n\n{DIV}\n➡️ <b>{'PAID' if action == 'wd_ok' else 'REJECTED'}</b>", parse_mode=ParseMode.HTML)
             try:
                 await ctx.bot.send_message(int(tuid), msg, parse_mode=ParseMode.HTML)
             except Exception:
@@ -847,13 +955,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             if action == "wd_ok":
                 u = await A(get_user, int(tuid))
-                await post_payout_proof(
-                    ctx,
-                    user_name=(u or {}).get("name", ""),
-                    method=w["method"],
-                    addr=w["address"],
-                    amount=w["amount"],
-                )
+                await post_payout_proof(ctx, (u or {}).get("name", ""), w["method"], w["address"], w["amount"])
         return
 
     if not await guard(update, ctx):
@@ -868,17 +970,16 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("cancel:"):
         await A(cancel_sync, uid, data.split(":")[1])
-        await q.edit_message_text(f"{CROSS} বাতিল করা হয়েছে।")
+        await q.edit_message_text(f"{CROSS} Cancelled.", parse_mode=ParseMode.HTML)
 
     elif data.startswith("done:"):
         acc = await A(submit_sync, uid, data.split(":")[1])
         if not acc:
-            await q.edit_message_text(f"{WARN} এই রিকোয়েস্টটি আর ভ্যালিড নেই।")
+            await q.edit_message_text(f"{WARN} Expired.", parse_mode=ParseMode.HTML)
             return
         await q.edit_message_text(
-            f"{CLOCK} <b>সফলভাবে সাবমিট হয়েছে!</b>\n{DIV}\n"
-            f"{MAIL} {mono(acc['email'] + '@gmail.com')}\n"
-            f"{DIV}\n{ARROW} এডমিন চেক করার পর ব্যালেন্স যোগ হবে...",
+            f"{CLOCK} <b>{'সাবমিট হয়েছে!' if is_bn else 'Submitted!'}</b>\n{DIV}\n"
+            f"{MAIL} {mono(acc['email'] + '@gmail.com')}\n{DIV}\n{ARROW} Waiting for review...",
             parse_mode=ParseMode.HTML,
         )
         kb = InlineKeyboardMarkup([[
@@ -887,21 +988,22 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]])
         await notify_admins(
             ctx,
-            f"{BELL} <b>নতুন জিমেইল সাবমিশন!</b>\n{DIV}\n"
-            f"{USER} ইউজার: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
-            f"{MAIL} ইমেইল: {mono(acc['email'] + '@gmail.com')}\n"
-            f"{KEY} পাসওয়ার্ড: {mono(acc['password'])}\n"
-            f"{BAG} রিওয়ার্ড: {money(acc['rate'])}",
+            f"{BELL} <b>NEW GMAIL SUBMISSION</b>\n{DIV}\n"
+            f"{USER} User: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
+            f"{MAIL} Email: {mono(acc['email'] + '@gmail.com')}\n"
+            f"{KEY} Password: {mono(acc['password'])}\n"
+            f"{BAG} Reward: {money(acc['rate'])}",
             kb,
         )
 
     elif data.startswith("wd:"):
         method = data.split(":")[1]
         ctx.user_data.update({"state": "wd_addr", "method": method})
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ বাতিল", callback_data="wd_cancel")]])
+        btn_cancel = "❌ বাতিল" if is_bn else "❌ Cancel"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(btn_cancel, callback_data="wd_cancel")]])
         await q.edit_message_text(
-            f"{CARD} <b>{esc(method)} পেমেন্ট</b>\n{DIV}\n"
-            f"{ARROW} আপনার সঠিক <b>{esc(method)}</b> নম্বর বা অ্যাকাউন্ট দিন:",
+            f"{CARD} <b>{esc(method)} Payout</b>\n{DIV}\n"
+            f"{ARROW} Enter your <b>{esc(method)}</b> account / number:",
             parse_mode=ParseMode.HTML, reply_markup=kb,
         )
 
@@ -921,29 +1023,16 @@ def admin_only(fn):
 async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     n, s = await A(stats_sync)
     text = (
-        f"{CROWN} <b>{BOT_NAME} — এডমিন কন্ট্রোল প্যানেল</b> {CROWN}\n"
+        f"{CROWN} <b>{BOT_NAME} — ADMIN PANEL</b> {CROWN}\n"
         f"{DIV}\n"
-        f"{USER} মোট ইউজার: <b>{n}</b>\n"
-        f"{CLOCK} পেন্ডিং জিমেইল: <b>{s.get('pending_acc', 0)}</b>\n"
-        f"{CHECK} অনুমোদিত জিমেইল: <b>{s.get('approved_acc', 0)}</b>\n"
-        f"{CARD} পেন্ডিং উইথড্র: <b>{s.get('pending_wd', 0)}</b>\n"
+        f"{USER} Users: <b>{n}</b>\n"
+        f"{CLOCK} Pending Gmail: <b>{s.get('pending_acc', 0)}</b>\n"
+        f"{CHECK} Approved Gmail: <b>{s.get('approved_acc', 0)}</b>\n"
+        f"{CARD} Pending Withdraws: <b>{s.get('pending_wd', 0)}</b>\n"
         f"{SUBDIV}\n"
-        f"{BELL} প্রুফ চ্যানেল: "
-        f"{'✅ ' + esc(PROOF_CHANNEL) if PROOF_CHANNEL else '❌ সেট করা নেই'}\n"
-        f"{SUBDIV}\n"
-        f"{GEM} রেট: {money(cfg('rate'))}\n"
-        f"{BAG} মিনিমাম উইথড্র: {money(cfg('min_withdraw'))}\n"
-        f"{GIFT} রেফার বোনাস: {money(cfg('ref_bonus'))}\n"
-        f"{SUBDIV}\n"
-        f"{ARROW} <b>কমান্ড লিস্ট:</b>\n"
-        f"• /setrate <amount>\n"
-        f"• /setmin <amount>\n"
-        f"• /setref <amount>\n"
-        f"• /ban <USER_ID>\n"
-        f"• /unban <USER_ID>\n"
-        f"• /addbal <USER_ID> <AMOUNT>\n"
-        f"• /broadcast <message>\n"
-        f"• /proof (টেস্ট প্রুফ পোস্ট)"
+        f"{GEM} Rate: {money(cfg('rate'))}\n"
+        f"{BAG} Min Withdraw: {money(cfg('min_withdraw'))}\n"
+        f"{GIFT} Ref Bonus: {money(cfg('ref_bonus'))}\n"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -957,13 +1046,10 @@ async def set_cfg_cmd(update, ctx):
         if val <= 0:
             raise ValueError
     except (IndexError, ValueError):
-        await update.message.reply_text(f"{CROSS} সঠিক ব্যবহার: {cmd} <সঠিক পজিটিভ সংখ্যা>")
+        await update.message.reply_text(f"{CROSS} Usage: {cmd} <number>", parse_mode=ParseMode.HTML)
         return
     await A(set_cfg_sync, key, val)
-    await update.message.reply_text(
-        f"{CHECK} <b>{key.replace('_', ' ').title()}</b> সফলভাবে আপডেট হয়েছে → <code>{val}</code>",
-        parse_mode=ParseMode.HTML,
-    )
+    await update.message.reply_text(f"{CHECK} Updated → <code>{val}</code>", parse_mode=ParseMode.HTML)
 
 
 @admin_only
@@ -971,11 +1057,9 @@ async def ban_cmd(update, ctx):
     ban = update.message.text.startswith("/ban")
     try:
         ok = await A(set_ban_sync, int(ctx.args[0]), ban)
-        await update.message.reply_text(
-            f"{CHECK} ইউজার সফলভাবে {'ব্যান' : 'আনব্যান'} করা হয়েছে।" if ok else f"{CROSS} ইউজার পাওয়া যায়নি।"
-        )
+        await update.message.reply_text(f"{CHECK} Success." if ok else f"{CROSS} User not found.", parse_mode=ParseMode.HTML)
     except (IndexError, ValueError):
-        await update.message.reply_text(f"{CROSS} ব্যবহার: /ban USER_ID")
+        await update.message.reply_text(f"{CROSS} Usage: /ban USER_ID", parse_mode=ParseMode.HTML)
 
 
 @admin_only
@@ -983,103 +1067,59 @@ async def addbal_cmd(update, ctx):
     try:
         uid, amt = int(ctx.args[0]), float(ctx.args[1])
     except (IndexError, ValueError):
-        await update.message.reply_text(f"{CROSS} ব্যবহার: /addbal USER_ID AMOUNT")
+        await update.message.reply_text(f"{CROSS} Usage: /addbal USER_ID AMOUNT", parse_mode=ParseMode.HTML)
         return
     ok = await A(add_balance_sync, uid, amt)
     if ok:
-        direction = "যোগ করা হয়েছে" if amt >= 0 else "কেটে নেওয়া হয়েছে"
-        await update.message.reply_text(
-            f"{CHECK} ইউজার {mono(uid)} এর অ্যাকাউন্টে {money(abs(amt))} {direction}।",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.message.reply_text(f"{CHECK} Balance updated for {mono(uid)}.", parse_mode=ParseMode.HTML)
     else:
-        await update.message.reply_text(f"{CROSS} ইউজার পাওয়া যায়নি।")
+        await update.message.reply_text(f"{CROSS} User not found.", parse_mode=ParseMode.HTML)
 
 
 @admin_only
 async def broadcast_cmd(update, ctx):
     msg = update.message.text.partition(" ")[2].strip()
     if not msg:
-        await update.message.reply_text(f"{CROSS} ব্যবহার: /broadcast আপনার মেসেজ")
+        await update.message.reply_text(f"{CROSS} Usage: /broadcast message", parse_mode=ParseMode.HTML)
         return
     ids = await A(all_user_ids_sync)
-    sent = 0
-    failed = 0
+    sent, failed = 0, 0
     for uid in ids:
-        for attempt in range(2):
-            try:
-                await ctx.bot.send_message(int(uid), msg)
-                sent += 1
-                break
-            except RetryAfter as e:
-                await asyncio.sleep(e.retry_after + 1)
-            except Exception:
-                if attempt == 0:
-                    await asyncio.sleep(0.1)
-                    continue
-                failed += 1
-                break
+        try:
+            await ctx.bot.send_message(int(uid), msg)
+            sent += 1
+        except Exception:
+            failed += 1
         await asyncio.sleep(0.05)
-    await update.message.reply_text(
-        f"{ROCKET} <b>ব্রডকাস্ট সম্পন্ন হয়েছে!</b>\n{DIV}\n"
-        f"{CHECK} সফল: <b>{sent}</b>\n"
-        f"{CROSS} ব্যর্থ: <b>{failed}</b>",
-        parse_mode=ParseMode.HTML,
-    )
+    await update.message.reply_text(f"{ROCKET} Broadcast: Sent {sent}, Failed {failed}", parse_mode=ParseMode.HTML)
 
 
 @admin_only
 async def proof_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not PROOF_CHANNEL:
-        await update.message.reply_text(
-            f"{WARN} <b>প্রুফ চ্যানেল সেটআপ করা নেই।</b>\n{DIV}\n"
-            f"{ARROW} এনভায়রনমেন্ট ভ্যারিয়েবল দিন: <code>PROOF_CHANNEL=@your_channel</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.message.reply_text(f"{WARN} PROOF_CHANNEL not set.", parse_mode=ParseMode.HTML)
         return
-
     try:
         await ctx.bot.send_message(
             PROOF_CHANNEL,
-            f"{ROCKET} <b>SUCCESSFUL WITHDRAWAL PROOF</b> {ROCKET}\n"
-            f"{DIV}\n"
-            f"{USER} <b>User:</b> Test U.\n"
-            f"{CARD} <b>Gateway:</b> bKash\n"
-            f"{MAIL} <b>Account:</b> {mono('***1234')}\n"
-            f"{BAG} <b>Amount Paid:</b> {money(100.0)}\n"
-            f"{CLOCK} <b>Timestamp:</b> {time.strftime('%d %b %Y • %H:%M')}\n"
-            f"{DIV}\n"
-            f"{FIRE} <i>100% Instant & Secure Payment Verified!</i>",
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
+            f"{ROCKET} <b>WITHDRAWAL PAID</b> {ROCKET}\n{DIV}\n{BAG} {money(100)} Test Proof",
+            parse_mode=ParseMode.HTML
         )
-        await update.message.reply_text(
-            f"{CHECK} <b>টেস্ট প্রুফ মেসেজ সফলভাবে পাঠানো হয়েছে:</b> {esc(PROOF_CHANNEL)}",
-            parse_mode=ParseMode.HTML,
-        )
-    except TelegramError as e:
-        await update.message.reply_text(
-            f"{CROSS} <b>মেসেজ পাঠানো যায়নি:</b> {esc(e)}\n{DIV}\n"
-            f"{WARN} নিশ্চিত করুন যে বটটি {esc(PROOF_CHANNEL)} চ্যানেলে <b>Admin</b> হিসেবে যুক্ত আছে।",
-            parse_mode=ParseMode.HTML,
-        )
+        await update.message.reply_text(f"{CHECK} Test proof sent.", parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await update.message.reply_text(f"{CROSS} Error: {e}", parse_mode=ParseMode.HTML)
 
 
 # ═══════════════════════════════════════════════════════════
-#  🌐  HEALTH CHECK & RUN
+#  🌐  RUNNER
 # ═══════════════════════════════════════════════════════════
 
-async def _health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def _health(update, ctx):
     await update.message.reply_text("OK")
-
-
-async def _error_handler(update, ctx):
-    log.exception("Unhandled error", exc_info=ctx.error)
 
 
 def _build_app() -> Application:
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("health", _health))
     app.add_handler(CommandHandler("admin", admin_cmd))
@@ -1091,20 +1131,13 @@ def _build_app() -> Application:
     app.add_handler(CommandHandler("proof", proof_cmd))
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-
-    app.add_error_handler(_error_handler)
     return app
 
 
 def main():
     app = _build_app()
-
     if RENDER_URL:
         webhook_url = f"{RENDER_URL.rstrip('/')}/{WEBHOOK_PATH}"
-        log.info("🌐 Starting %s in WEBHOOK mode", BOT_NAME)
-        log.info("   Listen  : 0.0.0.0:%s", PORT)
-        log.info("   Webhook : %s", webhook_url)
-
         app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
@@ -1114,11 +1147,7 @@ def main():
             drop_pending_updates=True,
         )
     else:
-        log.info("💻 Starting %s in POLLING mode (local dev)", BOT_NAME)
-        app.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,
-        )
+        app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
