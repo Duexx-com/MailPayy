@@ -1,5 +1,5 @@
 """
-💎 MAILPAYY BOT (ANIMATED EMOJIS | EN & BN | ULTRA-FAST)
+💎 MAILPAYY BOT (100K+ SCALABLE | FIXED CHANNEL & NAMES)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Users create Gmail accounts from bot-provided details and
 sell them for cash. Firebase Realtime Database backend.
@@ -85,8 +85,6 @@ _validate_env()
 # ═══════════════════════════════════════════════════════════
 #  ✨  TELEGRAM ANIMATED EMOJIS CONFIG
 # ═══════════════════════════════════════════════════════════
-# এখানে জনপ্রিয় টেলিগ্রাম অ্যানিমেটেড ইমোজি আইডি বসানো হয়েছে।
-# আপনি চাইলে @JsonDumpBot থেকে আপনার পছন্দের আইডি বসিয়ে বদলাতে পারবেন।
 
 ANIMATED: dict[str, str] = {
     "✨": "5321275567060081617",
@@ -183,7 +181,7 @@ LANGS = {
             f"{FIRE} <i>Start your earning journey right now!</i>"
         ),
         "banned": f"{LOCK} <b>You are banned from using this bot.</b>",
-        "join_channel": f"{BELL} <b>Please join our official channel to continue.</b>",
+        "join_channel": f"{BELL} <b>Please join our official channel to continue. After joining, tap the button below.</b>",
         "joined_btn": "✅ I Have Joined",
         "join_btn_text": "📢 Join Channel",
     },
@@ -208,7 +206,7 @@ LANGS = {
             f"{FIRE} <i>আপনার অনলাইন ইনকাম আজই শুরু করুন!</i>"
         ),
         "banned": f"{LOCK} <b>আপনি এই বট থেকে ব্যান হয়েছেন।</b>",
-        "join_channel": f"{BELL} <b>বটটি ব্যবহার করতে আমাদের অফিসিয়াল চ্যানেলে জয়েন করুন!</b>",
+        "join_channel": f"{BELL} <b>বটটি ব্যবহার করতে আমাদের অফিসিয়াল চ্যানেলে জয়েন করুন! জয়েন করার পর নিচের বাটনে ক্লিক করুন।</b>",
         "joined_btn": "✅ জয়েন করেছি",
         "join_btn_text": "📢 আমাদের চ্যানেলে জয়েন করুন",
     }
@@ -303,15 +301,24 @@ def _lock_for(uid: int) -> asyncio.Lock:
 
 
 # ═══════════════════════════════════════════════════════════
-#  🧬  IDENTITY GENERATOR
+#  🧬  EXPANDED IDENTITY GENERATOR (FOR 100K+ USERS)
 # ═══════════════════════════════════════════════════════════
 
-FIRST = ["Rafiq", "Tanvir", "Nusrat", "Sabbir", "Mim", "Arif", "Jannat", "Hasan",
-         "Rumana", "Imran", "Sadia", "Fahim", "Tasnim", "Rakib", "Mitu", "Shuvo",
-         "Farhana", "Nayeem", "Lamia", "Sohan"]
-LAST  = ["Ahmed", "Hossain", "Rahman", "Khan", "Islam", "Akter", "Chowdhury",
-         "Uddin", "Sarker", "Mia", "Begum", "Mahmud", "Karim", "Sultana",
-         "Biswas", "Talukdar", "Haque", "Sheikh", "Mondal", "Roy"]
+FIRST = [
+    "Rafiq", "Tanvir", "Nusrat", "Sabbir", "Mim", "Arif", "Jannat", "Hasan",
+    "Rumana", "Imran", "Sadia", "Fahim", "Tasnim", "Rakib", "Mitu", "Shuvo",
+    "Farhana", "Nayeem", "Lamia", "Sohan", "Al Amin", "Mehedi", "Nodi", "Pial",
+    "Afsana", "Rony", "Puja", "Joy", "Tania", "Rakibul", "Sumaiya", "Shohag",
+    "Bristy", "Monir", "Nipa", "Shihab", "Maliha", "Foysal", "Sabrina", "Zubair",
+    "Nazmul", "Akash", "Tuhin", "Ripa", "Badhon", "Mou", "Sajib", "Bristi", "Rifat"
+]
+LAST = [
+    "Ahmed", "Hossain", "Rahman", "Khan", "Islam", "Akter", "Chowdhury",
+    "Uddin", "Sarker", "Mia", "Begum", "Mahmud", "Karim", "Sultana",
+    "Biswas", "Talukdar", "Haque", "Sheikh", "Mondal", "Roy", "Siddique",
+    "Miah", "Dewan", "Bhuiyan", "Khandakar", "Prodhan", "Mollah", "Kabir",
+    "Das", "Sen", "Barua", "Paul", "Vhoumik", "Mazumder", "Bhowmik", "Ali"
+]
 
 
 def gen_password():
@@ -330,7 +337,9 @@ def gen_password():
 def gen_identity():
     while True:
         first, last = random.choice(FIRST), random.choice(LAST)
-        email = f"{first}{last}{random.randint(1000, 99999)}".lower()
+        clean_first = first.replace(" ", "").lower()
+        clean_last = last.replace(" ", "").lower()
+        email = f"{clean_first}{clean_last}{random.randint(10000, 999999)}"
         if R(f"emails/{email}").get() is None:
             R(f"emails/{email}").set(True)
             return first, last, email, gen_password()
@@ -548,7 +557,7 @@ async def post_payout_proof(ctx, user_name: str, method: str, addr: str, amount:
 
 
 # ═══════════════════════════════════════════════════════════
-#  🧰  MENUS & HELPERS
+#  🧰  MENUS & HELPERS (FIXED CHANNEL CACHE LOOP)
 # ═══════════════════════════════════════════════════════════
 
 def get_menu(lang: str):
@@ -583,8 +592,9 @@ async def notify_admins(ctx, text, markup=None):
             log.warning("admin notify failed for %s: %s", a, e)
 
 
+# ক্যাশিং টাইম ২ সেকেন্ড করা হয়েছে যাতে ইউজার জয়েন করার সাথে সাথেই বট ডিটেক্ট করতে পারে
 _channel_cache: dict[int, tuple[float, bool]] = {}
-_CHANNEL_TTL = 60
+_CHANNEL_TTL = 2
 
 
 async def _channel_ok(ctx, uid: int) -> bool:
@@ -669,8 +679,8 @@ async def issue_account(update: Update, ctx: ContextTypes.DEFAULT_TYPE, regenera
     )
     footer = (
         f"{WARN} <b>{'সতর্কতা' if is_bn else 'Warning'}:</b> {'ঠিক এই তথ্যগুলোই ব্যবহার করুন।' if is_bn else 'Use these exact details.'}\n"
-        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else "Don't change the password"}\n"
-        f"• {'কোনো রিকভারি ইনফো অ্যাড করবেন না' if is_bn else "Don't add recovery info"}\n"
+        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else \"Don't change the password\"}\n"
+        f"• {'কোনো রিকভারি ইনফো অ্যাড করবেন না' if is_bn else \"Don't add recovery info\"}\n"
         f"{DIV}\n"
         f"{ARROW} {'কাজ শেষ হলে নিচের বাটন চাপুন' if is_bn else 'Finished? Tap button below'} 👇"
     )
@@ -893,7 +903,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
-#  🔔  CALLBACKS
+#  🔔  CALLBACKS (FIXED CHANNEL JOIN CHECK)
 # ═══════════════════════════════════════════════════════════
 
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -905,12 +915,22 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     if data == "chk":
+        # ক্যাশ ক্লিয়ার করে নতুন করে চেক করা যাতে সাথে সাথে কাজ করে
+        if uid in _channel_cache:
+            del _channel_cache[uid]
+            
         if await guard(update, ctx):
+            try:
+                await q.message.delete()
+            except Exception:
+                pass
             await q.message.reply_text(
-                f"{CHECK} {'ধন্যবাদ!' if is_bn else 'Thanks!'} Send /start.",
+                f"{CHECK} {'ধন্যবাদ! বট সচল রয়েছে।' if is_bn else 'Thanks! Bot is ready.'}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_menu(lang),
             )
+        else:
+            await q.answer("❌ আপনি এখনো চ্যানেলে জয়েন করেননি! দয়া করে জয়েন করুন।", show_alert=True)
         return
 
     if data == "wd_cancel":
@@ -1078,7 +1098,7 @@ async def addbal_cmd(update, ctx):
 
 @admin_only
 async def broadcast_cmd(update, ctx):
-    msg = update.message.text.partition(" ")[2].strip()
+    msg = update.message.text.partition(" ")[2].strip()++
     if not msg:
         await update.message.reply_text(f"{CROSS} Usage: /broadcast message", parse_mode=ParseMode.HTML)
         return
