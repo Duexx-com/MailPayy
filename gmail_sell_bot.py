@@ -1,5 +1,5 @@
 """
-💎 MAILPAYY BOT (100K+ SCALABLE | EN & BN)
+💎 MAILPAYY BOT (OTP EMAIL VERIFY | 100K+ SCALABLE | EN & BN)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Users create Gmail accounts from bot-provided details and
 sell them for cash. Firebase Realtime Database backend.
@@ -12,7 +12,8 @@ Render Free Tier + UptimeRobot friendly:
 
 Install : pip install -r requirements.txt
 Env     : BOT_TOKEN, ADMIN_IDS, SUPPORT_USERNAME,
-          FIREBASE_DB_URL, FIREBASE_CREDENTIALS
+          FIREBASE_DB_URL, FIREBASE_CREDENTIALS,
+          MAIL_ADDRESS, MAIL_APP_PASSWORD
 Optional: REQUIRED_CHANNEL, PROOF_CHANNEL
           (Render auto-sets RENDER_EXTERNAL_URL and PORT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -25,8 +26,10 @@ import logging
 import os
 import random
 import secrets
+import smtplib
 import string
 import time
+from email.message import EmailMessage
 
 import firebase_admin
 from firebase_admin import credentials, db as rtdb
@@ -54,6 +57,9 @@ PROOF_CHANNEL     = os.getenv("PROOF_CHANNEL", "").strip()
 FIREBASE_DB_URL   = os.getenv("FIREBASE_DB_URL", "").strip()
 FIREBASE_CRED_STR = os.getenv("FIREBASE_CREDENTIALS", "").strip()
 
+MAIL_ADDRESS      = os.getenv("MAIL_ADDRESS", "").strip()
+MAIL_APP_PASSWORD = os.getenv("MAIL_APP_PASSWORD", "").strip()
+
 RENDER_URL        = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 PORT              = int(os.getenv("PORT", "8080"))
 WEBHOOK_PATH      = "tg-hook"
@@ -76,6 +82,8 @@ def _validate_env():
         missing.append("ADMIN_IDS")
     if not FIREBASE_DB_URL:
         missing.append("FIREBASE_DB_URL")
+    if not MAIL_ADDRESS or not MAIL_APP_PASSWORD:
+        log.warning("⚠️ MAIL_ADDRESS or MAIL_APP_PASSWORD not set — OTP email sending will fail.")
     if missing:
         raise SystemExit(f"❌ Missing required env vars: {', '.join(missing)}")
 
@@ -343,6 +351,34 @@ def gen_identity():
         if R(f"emails/{email}").get() is None:
             R(f"emails/{email}").set(True)
             return first, last, email, gen_password()
+
+
+# ═══════════════════════════════════════════════════════════
+#  ✉️  SMTP OTP SENDER
+# ═══════════════════════════════════════════════════════════
+
+def send_otp_email(to_email: str, otp: str) -> bool:
+    if not MAIL_ADDRESS or not MAIL_APP_PASSWORD:
+        log.error("SMTP credentials not configured!")
+        return False
+    try:
+        msg = EmailMessage()
+        msg.Subject = f"🔐 Your {BOT_NAME} Verification Code"
+        msg.From = MAIL_ADDRESS
+        msg.To = to_email
+        msg.set_content(
+            f"Hello,\n\nYour verification code for {BOT_NAME} is: {otp}\n\n"
+            f"Please enter this code in the Telegram bot to verify your email account.\n"
+            f"If you did not request this, please ignore this email."
+        )
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(MAIL_ADDRESS, MAIL_APP_PASSWORD)
+            smtp.send_message(msg)
+        return True
+    except Exception as e:
+        log.error(f"Failed to send OTP email to {to_email}: {e}")
+        return False
 
 
 # ═══════════════════════════════════════════════════════════
@@ -806,7 +842,7 @@ async def start_withdraw(update, ctx):
 
 
 # ═══════════════════════════════════════════════════════════
-#  ⌨️  TEXT ROUTER
+#  ⌨️  TEXT ROUTER (OTP INPUT & WITHDRAWALS)
 # ═══════════════════════════════════════════════════════════
 
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -839,6 +875,48 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if text in menu:
         ctx.user_data.clear()
         await menu[text]()
+        return
+
+    # ⚡ OTP ভেরিফিকেশন হ্যান্ডলার
+    if st == "verify_otp":
+        expected_otp = ctx.user_data.get("otp")
+        aid = ctx.user_data.get("aid")
+        full_email = ctx.user_data.get("email")
+
+        if text == expected_otp:
+            ctx.user_data.clear()
+            acc_submitted = await A(submit_sync, uid, aid)
+            if not acc_submitted:
+                await update.message.reply_text(f"{WARN} This request is no longer valid.", parse_mode=ParseMode.HTML)
+                return
+
+            await update.message.reply_text(
+                f"{CHECK} <b>{'ইমেইল সফলভাবে ভেরিফাই ও সাবমিট হয়েছে!' if is_bn else 'Email Verified & Submitted Successfully!'}</b>\n"
+                f"{DIV}\n"
+                f"{MAIL} {mono(full_email)}\n"
+                f"{DIV}\n{ARROW} {'এডমিন চেক করার পর ব্যালেন্স যোগ হবে...' if is_bn else 'Waiting for admin review...'}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_menu(lang)
+            )
+
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc_submitted['id']}"),
+                InlineKeyboardButton("❌ Reject",  callback_data=f"no:{uid}:{acc_submitted['id']}"),
+            ]])
+            await notify_admins(
+                ctx,
+                f"{BELL} <b>NEW VERIFIED GMAIL SUBMISSION</b>\n{DIV}\n"
+                f"{USER} User: <b>{esc(update.effective_user.full_name)}</b> ({mono(uid)})\n"
+                f"{MAIL} Email: {mono(full_email)}\n"
+                f"{KEY} Password: {mono(acc_submitted['password'])}\n"
+                f"{BAG} Reward: {money(acc_submitted['rate'])}",
+                kb,
+            )
+        else:
+            await update.message.reply_text(
+                f"{CROSS} <b>{'ভুল OTP কোড!' if is_bn else 'Invalid OTP Code!'}</b>\n"
+                f"{ARROW} {'সঠিক OTP কোডটি আবার লিখুন বা পুনরায় সাবমিট করুন।' if is_bn else 'Please type the correct OTP code sent to your email.'}"
+            )
         return
 
     if st == "wd_addr":
@@ -902,7 +980,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
-#  🔔  CALLBACKS
+#  🔔  CALLBACKS (TRIGGER OTP ON SUBMIT)
 # ═══════════════════════════════════════════════════════════
 
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -992,33 +1070,45 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("done:"):
         aid = data.split(":")[1]
-        acc_submitted = await A(submit_sync, uid, aid)
-        if not acc_submitted:
-            await q.edit_message_text(f"{WARN} This request is no longer valid.", parse_mode=ParseMode.HTML)
+        acc = R(f"accounts/{uid}/{aid}").get()
+        if not acc:
+            await q.edit_message_text(f"{WARN} Expired.", parse_mode=ParseMode.HTML)
             return
 
-        full_email = f"{acc_submitted['email']}@gmail.com"
+        full_email = f"{acc['email']}@gmail.com"
+        otp = f"{random.randint(100000, 999999)}"
 
         await q.edit_message_text(
-            f"{CHECK} <b>সফলভাবে সাবমিট হয়েছে!</b>\n"
-            f"{DIV}\n"
-            f"{MAIL} {mono(full_email)}\n"
-            f"{DIV}\n{ARROW} এডমিন চেক করার পর ব্যালেন্স যোগ হবে...",
-            parse_mode=ParseMode.HTML,
+            f"{CLOCK} <b>{'জিমেইলে OTP পাঠানো হচ্ছে... দয়া করে অপেক্ষা করুন!' if is_bn else 'Sending OTP to Gmail... Please wait!'}</b>",
+            parse_mode=ParseMode.HTML
         )
-        
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{acc_submitted['id']}"),
-            InlineKeyboardButton("❌ Reject",  callback_data=f"no:{uid}:{acc_submitted['id']}"),
-        ]])
-        await notify_admins(
-            ctx,
-            f"{BELL} <b>NEW GMAIL SUBMISSION</b>\n{DIV}\n"
-            f"{USER} User: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
-            f"{MAIL} Email: {mono(full_email)}\n"
-            f"{KEY} Password: {mono(acc_submitted['password'])}\n"
-            f"{BAG} Reward: {money(acc_submitted['rate'])}",
-            kb,
+
+        # ⚡ জিমেইলে OTP পাঠানো
+        sent = await A(send_otp_email, full_email, otp)
+        if not sent:
+            await q.edit_message_text(
+                f"{CROSS} <b>{'OTP পাঠানো ব্যর্থ হয়েছে!' if is_bn else 'Failed to send OTP!'}</b>\n"
+                f"দয়া করে ইমেইল অ্যাকাউন্টটি চেক করুন অথবা সঠিক তথ্য দিয়ে আবার চেষ্টা করুন।",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        # ইউজার ডাটা সেভ করে রাখা যাতে পরবর্তী মেসেজে ওটিপি ম্যাচ করা যায়
+        ctx.user_data["state"] = "verify_otp"
+        ctx.user_data["otp"] = otp
+        ctx.user_data["aid"] = aid
+        ctx.user_data["email"] = full_email
+
+        btn_cancel = "❌ বাতিল" if is_bn else "❌ Cancel"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(btn_cancel, callback_data="wd_cancel")]])
+
+        await q.edit_message_text(
+            f"{MAIL} <b>{'ভেরিফিকেশন কোড পাঠানো হয়েছে!' if is_bn else 'Verification Code Sent!'}</b>\n"
+            f"{DIV}\n"
+            f"আমরা <b>{mono(full_email)}</b> এ একটি ৬ ডিজিটের OTP পাঠিয়েছি।\n"
+            f"{ARROW} {'দয়া করে আপনার জিমেইল ইনবক্স চেক করে ৬ ডিজিটের কোডটি এখানে চ্যাটে টাইপ করে পাঠান:' if is_bn else 'Please check your inbox and type the 6-digit OTP code below:'}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb
         )
 
     elif data.startswith("wd:"):
