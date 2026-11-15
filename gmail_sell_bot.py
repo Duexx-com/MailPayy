@@ -694,8 +694,8 @@ async def issue_account(update: Update, ctx: ContextTypes.DEFAULT_TYPE, regenera
     )
     footer = (
         f"{WARN} <b>{'সতর্কতা' if is_bn else 'Warning'}:</b> {'ঠিক এই তথ্যগুলোই ব্যবহার করুন।' if is_bn else 'Use these exact details.'}\n"
-        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else \"Don't change the password\"}\n"
-        f"• {'কোনো রিকভারি ইনফো অ্যাড করবেন না' if is_bn else \"Don't add recovery info\"}\n"
+        f"• {'পাসওয়ার্ড পরিবর্তন করবেন না' if is_bn else 'Donot change the password'}\n"
+        f"• {'কোনো রিকভারি ইনফো অ্যাড করবেন না' if is_bn else 'Do not add recovery info'}\n"
         f"{DIV}\n"
         f"{ARROW} {'কাজ শেষ হলে নিচের বাটন চাপুন' if is_bn else 'Finished? Tap button below'} 👇"
     )
