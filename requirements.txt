@@ -2,3 +2,4 @@ python-telegram-bot[webhooks]>=21
 firebase-admin
 uvicorn
 starlette
+aiohttp
