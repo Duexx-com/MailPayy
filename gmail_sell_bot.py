@@ -10,7 +10,7 @@ when a withdrawal is paid.
 Install : pip install python-telegram-bot==21.6 firebase-admin aiohttp
 Env     : BOT_TOKEN, ADMIN_IDS, SUPPORT_USERNAME,
           FIREBASE_DB_URL, FIREBASE_CREDENTIALS
-Optional: REQUIRED_CHANNEL, PROOF_CHANNEL, WEBAPP_URL
+Optional: REQUIRED_CHANNEL, PROOF_CHANNEL, ADMIN_CHANNEL, WITHDRAW_CHANNEL, WEBAPP_URL
           (Render auto-sets RENDER_EXTERNAL_URL and PORT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
@@ -55,6 +55,10 @@ ADMIN_IDS         = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.
 SUPPORT_USERNAME  = os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@")
 REQUIRED_CHANNEL  = os.getenv("REQUIRED_CHANNEL", "").strip()
 PROOF_CHANNEL     = os.getenv("PROOF_CHANNEL", "").strip()
+_ac = os.getenv("ADMIN_CHANNEL", "").strip()
+ADMIN_CHANNEL     = int(_ac) if _ac.lstrip("-").isdigit() else _ac  # private channel for Gmail review
+_wc = os.getenv("WITHDRAW_CHANNEL", "").strip()
+WITHDRAW_CHANNEL  = int(_wc) if _wc.lstrip("-").isdigit() else _wc  # private channel for withdrawal review
 FIREBASE_DB_URL   = os.getenv("FIREBASE_DB_URL", "").strip()
 FIREBASE_CRED_STR = os.getenv("FIREBASE_CREDENTIALS", "").strip()
 
@@ -275,19 +279,24 @@ def _lock_for(uid: int) -> asyncio.Lock:
 # ═══════════════════════════════════════════════════════════
 
 FIRST = [
-    "Rafiq", "Tanvir", "Nusrat", "Sabbir", "Mim", "Arif", "Jannat", "Hasan",
-    "Rumana", "Imran", "Sadia", "Fahim", "Tasnim", "Rakib", "Mitu", "Shuvo",
-    "Farhana", "Nayeem", "Lamia", "Sohan", "Al Amin", "Mehedi", "Nodi", "Pial",
-    "Afsana", "Rony", "Puja", "Joy", "Tania", "Rakibul", "Sumaiya", "Shohag",
-    "Bristy", "Monir", "Nipa", "Shihab", "Maliha", "Foysal", "Sabrina", "Zubair",
-    "Nazmul", "Akash", "Tuhin", "Ripa", "Badhon", "Mou", "Sajib", "Bristi", "Rifat",
+    "James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph",
+    "Thomas", "Charles", "Daniel", "Matthew", "Anthony", "Mark", "Steven", "Paul",
+    "Andrew", "Joshua", "Kevin", "Brian", "George", "Edward", "Ryan", "Jacob",
+    "Nicholas", "Eric", "Jonathan", "Justin", "Brandon", "Tyler", "Austin", "Dylan",
+    "Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica",
+    "Sarah", "Karen", "Nancy", "Lisa", "Ashley", "Emily", "Megan", "Amanda",
+    "Melissa", "Rebecca", "Laura", "Hannah", "Olivia", "Emma", "Sophia", "Grace",
+    "Lauren", "Rachel", "Samantha", "Natalie", "Brittany", "Kayla", "Alyssa", "Victoria",
 ]
 LAST = [
-    "Ahmed", "Hossain", "Rahman", "Khan", "Islam", "Akter", "Chowdhury",
-    "Uddin", "Sarker", "Mia", "Begum", "Mahmud", "Karim", "Sultana",
-    "Biswas", "Talukdar", "Haque", "Sheikh", "Mondal", "Roy", "Siddique",
-    "Miah", "Dewan", "Bhuiyan", "Khandakar", "Prodhan", "Mollah", "Kabir",
-    "Das", "Sen", "Barua", "Paul", "Vhoumik", "Mazumder", "Bhowmik", "Ali",
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson",
+    "Anderson", "Taylor", "Thomas", "Moore", "Martin", "Jackson", "Thompson", "White",
+    "Harris", "Clark", "Lewis", "Robinson", "Walker", "Young", "Allen", "King",
+    "Wright", "Scott", "Hill", "Green", "Adams", "Baker", "Nelson", "Carter",
+    "Mitchell", "Roberts", "Turner", "Phillips", "Campbell", "Parker", "Evans", "Edwards",
+    "Collins", "Stewart", "Morris", "Murphy", "Cook", "Rogers", "Morgan", "Cooper",
+    "Peterson", "Reed", "Bailey", "Bell", "Kelly", "Howard", "Ward", "Cox",
+    "Richardson", "Wood", "Watson", "Brooks", "Bennett", "Gray", "Hughes", "Price",
 ]
 
 
@@ -553,6 +562,18 @@ async def notify_admins(bot, text, markup=None):
             await bot.send_message(a, text, parse_mode=ParseMode.HTML, reply_markup=markup)
         except Exception as e:
             log.warning("admin notify failed for %s: %s", a, e)
+
+
+async def notify_review(bot, text, markup=None, channel=None):
+    """Post to a review channel (default ADMIN_CHANNEL); fall back to admin DMs if unset or failing."""
+    channel = ADMIN_CHANNEL if channel is None else channel
+    if channel:
+        try:
+            await bot.send_message(channel, text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            return
+        except Exception as e:
+            log.warning("review channel post failed (%s) — falling back to admin DMs", e)
+    await notify_admins(bot, text, markup)
 
 
 _channel_cache: dict[int, tuple[float, bool]] = {}
@@ -886,7 +907,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("✅ Approve", callback_data=f"ok:{uid}:{aid}"),
             InlineKeyboardButton("❌ Reject", callback_data=f"no:{uid}:{aid}"),
         ]])
-        await notify_admins(
+        await notify_review(
             ctx.bot,
             f"{BELL} <b>NEW GMAIL SUBMISSION</b>\n{DIV}\n"
             f"{USER} User: <b>{esc(q.from_user.full_name)}</b> ({mono(uid)})\n"
@@ -1233,15 +1254,15 @@ function validate(){
 }
 async function api(path, body){
   const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Init-Data":INIT},
-    body:JSON.stringify(body||{})});
-  const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||"err"); return j;
+    body:JSON.stringify(Object.assign({initData:INIT},body||{}))});
+  const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||("HTTP "+r.status)); return j;
 }
 async function load(){
   if(!INIT){ toast(t("eOpen")); return; }
   try{
     const d=await api("/api/info");
     S.bal=d.balance; S.min=d.min; S.hist=d.history; S.lang=d.lang==="bn"?"bn":"en";
-  }catch(e){ toast(t("eNet")); }
+  }catch(e){ toast(t("eNet")+" ("+e.message+")"); }
   renderMethods(); renderText(); check();
 }
 $("langBtn").onclick=()=>{ S.lang=S.lang==="en"?"bn":"en"; renderText(); };
@@ -1259,7 +1280,7 @@ $("go").onclick=async()=>{
     const d=await api("/api/withdraw",{method:S.method,address:$("addr").value.trim(),amount:amtVal()});
     S.bal=d.balance; S.hist=d.history; $("amt").value=""; $("addr").value="";
     hap("success"); $("ov").classList.add("show");
-  }catch(err){ hap("error"); toast(err.message&&err.message!=="err"?err.message:t("eNet")); }
+  }catch(err){ hap("error"); toast(err.message||t("eNet")); }
   S.busy=false; renderText(); check();
 };
 $("close").onclick=()=>{ $("ov").classList.remove("show"); if(tg) tg.close(); };
@@ -1299,8 +1320,17 @@ def _wd_history(uid):
              "status": w.get("status"), "created": w.get("created", 0)} for w in wds[:5]]
 
 
-def _web_user(request):
-    return verify_init_data(request.headers.get("X-Init-Data", ""))
+async def _auth(request):
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    init = request.headers.get("X-Init-Data", "") or str(body.get("initData", ""))
+    tu = verify_init_data(init)
+    if not tu:
+        log.warning("initData rejected (length=%s)", len(init))
+    return tu, body
 
 
 async def web_payout(request):
@@ -1309,7 +1339,7 @@ async def web_payout(request):
 
 
 async def web_info(request):
-    tu = _web_user(request)
+    tu, _ = await _auth(request)
     if not tu:
         return web.json_response({"error": "unauthorized"}, status=401)
     uid = tu["id"]
@@ -1327,12 +1357,11 @@ _ADDR_RE = {"bKash": re.compile(r"^01[3-9]\d{8}$"), "Nagad": re.compile(r"^01[3-
 
 
 async def web_withdraw(request):
-    tu = _web_user(request)
+    tu, body = await _auth(request)
     if not tu:
         return web.json_response({"error": "unauthorized"}, status=401)
     uid = tu["id"]
     try:
-        body = await request.json()
         method = str(body.get("method", ""))
         addr = str(body.get("address", "")).strip()
         amt = round(float(body.get("amount")), 2)
@@ -1365,12 +1394,12 @@ async def web_withdraw(request):
         InlineKeyboardButton("✅ Paid", callback_data=f"wd_ok:{uid}:{wid}"),
         InlineKeyboardButton("❌ Reject", callback_data=f"wd_no:{uid}:{wid}"),
     ]])
-    await notify_admins(
+    await notify_review(
         TG.bot,
         f"{CARD} <b>NEW WITHDRAWAL REQUEST</b>\n{DIV}\n"
         f"{USER} User: <b>{esc(user.get('name'))}</b> ({mono(uid)})\n"
         f"{CARD} Method: <b>{esc(method)}</b>\n{MAIL} Address: {mono(addr)}\n{BAG} Amount: {money(amt)}",
-        kb)
+        kb, channel=WITHDRAW_CHANNEL)
 
     fresh = await A(get_user, uid)
     return web.json_response({"ok": True, "balance": float(fresh.get("balance", 0)),
